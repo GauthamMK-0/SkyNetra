@@ -3,16 +3,15 @@ from __future__ import annotations
 import math
 
 import numpy as np
-import pytest
 
 from skynetra.foundation.math_utils import (
+    cartesian_to_spherical,
+    great_circle_distance,
     kepler_eccentric_anomaly,
     rotation_matrix_x,
     rotation_matrix_y,
     rotation_matrix_z,
     spherical_to_cartesian,
-    cartesian_to_spherical,
-    great_circle_distance,
 )
 
 

@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import dataclasses
 
-from skynetra.foundation.types import NodeId, TimeSeconds
 from skynetra.domain.packets.packet import Packet
+from skynetra.foundation.types import NodeId, TimeSeconds
 from skynetra.orchestration.events import (
-    SimulationEvent,
-    SimulationStartEvent,
-    SimulationEndEvent,
+    MetricsEvent,
     NodeEvent,
     PacketEvent,
-    TopologyEvent,
     PhysicsEvent,
-    MetricsEvent,
+    SimulationEndEvent,
+    SimulationEvent,
+    SimulationStartEvent,
+    TopologyEvent,
 )
 
 

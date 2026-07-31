@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import networkx as nx
 
-from skynetra.orchestration.context import SimulationContext
 from skynetra.foundation.eventbus import EventBus
 from skynetra.foundation.types import NodeId
+from skynetra.orchestration.context import SimulationContext
 
 
 class TestSimulationContext:

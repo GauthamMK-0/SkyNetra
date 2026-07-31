@@ -4,10 +4,10 @@ from typing import Dict, List
 
 import networkx as nx
 
-from skynetra.foundation.types import NodeId
 from skynetra.domain.nodes import RelayNode
 from skynetra.engines.routing.interface import RoutingEngine
 from skynetra.engines.routing.registry import STRATEGIES
+from skynetra.foundation.types import NodeId
 from skynetra.orchestration.engine import SkyNetraSimulation
 from skynetra.orchestration.metrics import NetworkMetricsCollector
 

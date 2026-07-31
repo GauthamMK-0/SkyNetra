@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict
 
-from skynetra.foundation.types import NodeId
-from skynetra.domain.nodes import RelayNode, PhysicsState
+from skynetra.domain.nodes import PhysicsState, RelayNode
+from skynetra.engines.physics import PhysicsOrchestrator
 from skynetra.engines.physics.interface import PhysicsModel
 from skynetra.engines.physics.registry import STRATEGIES
-from skynetra.engines.physics import PhysicsOrchestrator
 from skynetra.engines.routing import ShortestPathRouter
+from skynetra.foundation.types import NodeId
 from skynetra.orchestration.engine import SkyNetraSimulation
 from skynetra.orchestration.metrics import PhysicsMetricsCollector
 

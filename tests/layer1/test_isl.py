@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-
 from skynetra.domain.topology.isl import compute_isl_visibility, link_quality
 from skynetra.foundation.types import Vector3
 

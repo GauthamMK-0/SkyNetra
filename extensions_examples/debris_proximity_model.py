@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Dict
 
-from skynetra.foundation.types import NodeId
 from skynetra.domain.nodes.base import PhysicsState
 from skynetra.engines.physics.interface import PhysicsModel
 from skynetra.engines.physics.registry import STRATEGIES
+from skynetra.foundation.types import NodeId
 
 
 class DebrisProximityModel(PhysicsModel):

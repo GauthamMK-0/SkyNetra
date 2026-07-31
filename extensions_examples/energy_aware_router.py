@@ -4,9 +4,9 @@ from typing import Dict, List
 
 import networkx as nx
 
-from skynetra.foundation.types import NodeId
 from skynetra.engines.routing.interface import RoutingEngine
 from skynetra.engines.routing.registry import STRATEGIES
+from skynetra.foundation.types import NodeId
 
 
 class EnergyAwareRouter(RoutingEngine):

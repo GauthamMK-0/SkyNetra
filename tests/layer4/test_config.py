@@ -6,25 +6,22 @@ from pathlib import Path
 
 import yaml
 
-from skynetra.interface.config.schema import (
-    FullConfig,
-    FoundationConfig,
-    DomainConfig,
-    ConstellationSection,
-    EnginesConfig,
-    RoutingSection,
-    PhysicsSection,
-    WorkloadSection,
-    OrchestrationConfig,
-    MetricsSection,
-    InterfaceConfig,
-    VizConfig,
-)
 from skynetra.interface.config.defaults import (
-    load_config,
-    save_config,
     PRESETS,
     _deep_merge,
+    load_config,
+    save_config,
+)
+from skynetra.interface.config.schema import (
+    DomainConfig,
+    EnginesConfig,
+    FoundationConfig,
+    FullConfig,
+    InterfaceConfig,
+    OrchestrationConfig,
+    PhysicsSection,
+    RoutingSection,
+    WorkloadSection,
 )
 
 

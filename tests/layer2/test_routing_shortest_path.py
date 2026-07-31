@@ -4,7 +4,6 @@ import networkx as nx
 import pytest
 
 from skynetra.engines.routing.shortest_path import ShortestPathRouter
-from skynetra.foundation.types import NodeId
 
 
 @pytest.fixture

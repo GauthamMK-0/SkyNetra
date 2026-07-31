@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import networkx as nx
 
 from skynetra.interface.viz.network_plots import plot_network_topology
+from skynetra.interface.viz.physics_plots import plot_physics_state
 from skynetra.interface.viz.scaling_plots import plot_scaling_results
 from skynetra.interface.viz.topology_viz import plot_isl_connectivity
-from skynetra.interface.viz.physics_plots import plot_physics_state
 
 
 def _make_graph() -> nx.Graph:

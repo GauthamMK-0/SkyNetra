@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict
 
-from skynetra.foundation.types import NodeId
-from skynetra.domain.nodes import RelayNode, GroundStation
+from skynetra.domain.nodes import GroundStation, RelayNode
 from skynetra.engines.routing import ShortestPathRouter
+from skynetra.foundation.types import NodeId
 from skynetra.orchestration.engine import SkyNetraSimulation
 from skynetra.orchestration.metrics import NetworkMetricsCollector, TopologyMetricsCollector
 

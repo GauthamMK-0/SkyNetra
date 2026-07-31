@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing import Dict
-
 import networkx as nx
 
-from skynetra.domain.nodes.base import Node, PhysicsState
 from skynetra.domain.nodes.relay import RelayNode
 from skynetra.foundation.types import NodeId
 from skynetra.orchestration.context import SimulationContext

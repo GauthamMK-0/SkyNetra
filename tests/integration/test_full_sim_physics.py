@@ -4,14 +4,14 @@ from typing import Dict, List
 
 from skynetra.domain.nodes.base import Node, PhysicsState
 from skynetra.domain.nodes.relay import RelayNode
-from skynetra.engines.routing.shortest_path import ShortestPathRouter
-from skynetra.engines.physics.thermal import ThermalModel
-from skynetra.engines.physics.radiation import RadiationModel
-from skynetra.engines.physics.power import PowerModel
 from skynetra.engines.physics.orchestrator import PhysicsOrchestrator
+from skynetra.engines.physics.power import PowerModel
+from skynetra.engines.physics.radiation import RadiationModel
+from skynetra.engines.physics.thermal import ThermalModel
+from skynetra.engines.routing.shortest_path import ShortestPathRouter
+from skynetra.foundation.types import NodeId
 from skynetra.orchestration.engine import SkyNetraSimulation
 from skynetra.orchestration.metrics.physics_metrics import PhysicsMetricsCollector
-from skynetra.foundation.types import NodeId, Vector3
 
 
 def _make_nodes() -> Dict[NodeId, Node]:
@@ -89,6 +89,7 @@ def test_all_physics_models_applied():
         dt=0.5,
     )
     results = sim.run(duration=3.0)
+    assert results.duration == 3.0
     sat1 = nodes[NodeId("sat-1")]
 
     # Temperature should change since initial != ThermalModel equilibrium (300K)

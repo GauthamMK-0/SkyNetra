@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from skynetra.foundation.types import NodeId
 from skynetra.domain.nodes import RelayNode
 from skynetra.engines.routing import ShortestPathRouter
-from skynetra.orchestration.engine import SkyNetraSimulation
+from skynetra.foundation.types import NodeId
 from skynetra.orchestration.context import SimulationContext
+from skynetra.orchestration.engine import SkyNetraSimulation
 from skynetra.orchestration.metrics.interface import MetricsCollector
 from skynetra.orchestration.metrics.registry import STRATEGIES
 
@@ -29,7 +29,6 @@ class LatencyMetricsCollector(MetricsCollector):
 def main() -> None:
     STRATEGIES["latency_metrics"] = LatencyMetricsCollector
 
-    from typing import Dict
 
     nodes: Dict[NodeId, RelayNode] = {
         NodeId("a"): RelayNode(NodeId("a")),

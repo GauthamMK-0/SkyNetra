@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict
-
 import networkx as nx
 
 from skynetra.domain.topology.graph import build_topology_graph

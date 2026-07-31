@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import List
 
 import networkx as nx
 
-from skynetra.foundation.types import NodeId
 from skynetra.engines.routing.interface import RoutingEngine
 from skynetra.engines.routing.registry import STRATEGIES, get_router, list_routers
+from skynetra.foundation.types import NodeId
 
 
 class CustomEchoRouter(RoutingEngine):

@@ -3,14 +3,14 @@ from __future__ import annotations
 from typing import Dict
 
 from skynetra.domain.nodes.base import Node
-from skynetra.domain.nodes.relay import RelayNode
 from skynetra.domain.nodes.ground import GroundStation
+from skynetra.domain.nodes.relay import RelayNode
 from skynetra.engines.routing.shortest_path import ShortestPathRouter
+from skynetra.foundation.types import NodeId
 from skynetra.orchestration.engine import SkyNetraSimulation
-from skynetra.orchestration.results import SimulationResults
 from skynetra.orchestration.metrics.network import NetworkMetricsCollector
 from skynetra.orchestration.metrics.topology_metrics import TopologyMetricsCollector
-from skynetra.foundation.types import NodeId
+from skynetra.orchestration.results import SimulationResults
 
 
 def test_shortest_path_simulation_returns_results():

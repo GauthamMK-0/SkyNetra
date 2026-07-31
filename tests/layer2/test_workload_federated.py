@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Dict
 
 from skynetra.domain.nodes.base import Node
-from skynetra.domain.nodes.relay import RelayNode
 from skynetra.domain.nodes.pod import PodNode
 from skynetra.engines.workload.federated_learning import FederatedLearningWorkload
 from skynetra.engines.workload.profiles import WorkloadProfile
@@ -73,7 +72,10 @@ class TestFederatedLearningWorkload:
     def test_is_workload_generator(self):
         from skynetra.engines.workload.interface import WorkloadGenerator
         profile = WorkloadProfile(name="federated")
-        assert isinstance(FederatedLearningWorkload(profile, aggregator=NodeId("agg")), WorkloadGenerator)
+        assert isinstance(
+            FederatedLearningWorkload(profile, aggregator=NodeId("agg")),
+            WorkloadGenerator,
+        )
 
     def test_registered(self):
         from skynetra.engines.workload.registry import STRATEGIES

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from skynetra.domain.nodes.base import Node, PhysicsState
-from skynetra.domain.nodes.relay import RelayNode
+from skynetra.domain.nodes.base import PhysicsState
 from skynetra.domain.nodes.pod import PodNode
+from skynetra.domain.nodes.relay import RelayNode
 from skynetra.foundation.types import NodeId
 from skynetra.orchestration.context import SimulationContext
 from skynetra.orchestration.metrics.physics_metrics import PhysicsMetricsCollector

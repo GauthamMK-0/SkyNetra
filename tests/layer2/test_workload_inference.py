@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Dict
 
 from skynetra.domain.nodes.base import Node
-from skynetra.domain.nodes.relay import RelayNode
 from skynetra.domain.nodes.ground import GroundStation
+from skynetra.domain.nodes.relay import RelayNode
 from skynetra.engines.workload.inference import InferenceWorkload
 from skynetra.engines.workload.profiles import WorkloadProfile
 from skynetra.foundation.types import NodeId, TimeSeconds
@@ -85,7 +85,10 @@ class TestInferenceWorkload:
     def test_is_workload_generator(self):
         from skynetra.engines.workload.interface import WorkloadGenerator
         profile = WorkloadProfile(name="inference")
-        assert isinstance(InferenceWorkload(profile, ground_nodes=[NodeId("gs-1")]), WorkloadGenerator)
+        assert isinstance(
+            InferenceWorkload(profile, ground_nodes=[NodeId("gs-1")]),
+            WorkloadGenerator,
+        )
 
     def test_registered(self):
         from skynetra.engines.workload.registry import STRATEGIES
