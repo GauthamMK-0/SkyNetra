@@ -25,4 +25,4 @@ jobs:
         run: pip install -e .
 
       - name: Check layer boundaries
-        run: import-linter .
+        run: import-linter lint

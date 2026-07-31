@@ -10,6 +10,7 @@ import math
 from typing import Tuple
 
 import numpy as np
+from numpy.typing import NDArray
 
 Vector3 = Tuple[float, float, float]
 
@@ -28,17 +29,17 @@ def kepler_eccentric_anomaly(
     return E
 
 
-def rotation_matrix_x(angle: float) -> np.ndarray:
+def rotation_matrix_x(angle: float) -> NDArray[np.float64]:
     c, s = math.cos(angle), math.sin(angle)
     return np.array([[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]])
 
 
-def rotation_matrix_y(angle: float) -> np.ndarray:
+def rotation_matrix_y(angle: float) -> NDArray[np.float64]:
     c, s = math.cos(angle), math.sin(angle)
     return np.array([[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]])
 
 
-def rotation_matrix_z(angle: float) -> np.ndarray:
+def rotation_matrix_z(angle: float) -> NDArray[np.float64]:
     c, s = math.cos(angle), math.sin(angle)
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
 
