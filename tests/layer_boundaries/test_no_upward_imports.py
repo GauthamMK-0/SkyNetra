@@ -70,7 +70,7 @@ def test_no_upward_imports():
 
 
 @pytest.mark.skipif(
-    not sys.version_info >= (3, 10), reason="import-linter requires Python 3.10+"
+    not sys.version_info >= (3, 11), reason="import-linter requires Python 3.11+"
 )
 def test_import_linter_via_subprocess():
     try:

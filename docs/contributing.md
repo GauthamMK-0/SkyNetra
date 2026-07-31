@@ -63,10 +63,10 @@ The `.importlinter` config defines the layer ordering. The AST-based test scans 
 ### Style
 
 - **Line length:** 100 characters
-- **Formatter:** Black (`target-version = py310`)
+- **Formatter:** Black (`target-version = py311`)
 - **Linter:** Ruff (select: E, F, I, W)
 - **Type checker:** mypy (`strict = true`)
-- **Python version:** 3.10 minimum
+- **Python version:** 3.11 minimum
 
 ### Conventions
 
