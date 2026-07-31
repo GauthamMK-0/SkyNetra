@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skynetra"
+dynamic = ["version"]
+description = "SkyNetra — simulation toolkit for compute-aware routing in space-based data center networks"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Proprietary"}
+authors = [
+    {name = "SkyNetra Contributors"},
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+
+dependencies = [
+    "networkx>=3.0",
+    "simpy>=4.0",
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "plotly>=5.14",
+    "pandas>=2.0",
+    "pyyaml>=6.0",
+    "skyfield>=1.45",
+    "sgp4>=2.22",
+    "pydantic>=2.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "pytest-asyncio>=0.21",
+    "black>=23.7",
+    "ruff>=0.1",
+    "mypy>=1.5",
+    "import-linter>=2.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["skynetra*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "skynetra.__version__"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["numpy.*", "numpy"]
+ignore_errors = true
+

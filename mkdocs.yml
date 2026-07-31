@@ -1,0 +1,31 @@
+site_name: SkyNetra
+site_description: Internal simulation toolkit for compute-aware routing in space-based data center networks
+repo_url: ""
+edit_uri: ""
+
+# Internal use only — not publicly published.
+site_author: SkyNetra Team
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Layering Guide: layering_guide.md
+  - Extension Guide: extension_guide.md
+  - API Reference: api.md
+  - Examples: examples.md
+  - Physics Extensions: physics_extensions.md
+  - Contributing: contributing.md
+
+theme:
+  name: readthedocs
+  highlightjs: true
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences
+
+extra:
+  version: 0.1.0.dev0
+
+# This site is for internal use only and is not published externally.

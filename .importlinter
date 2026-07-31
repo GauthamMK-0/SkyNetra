@@ -1,0 +1,12 @@
+[importlinter]
+root_package = skynetra
+
+[importlinter:contract:1]
+name = Layer dependency direction
+type = layers
+layers =
+    skynetra.interface
+    skynetra.orchestration
+    skynetra.engines
+    skynetra.domain
+    skynetra.foundation

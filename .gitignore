@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
+
+# Outputs
+output/
+*.png
+*.pdf
+
+# Secrets
+.env
+.env.*
+*.pem
+
+# OS
+.DS_Store
