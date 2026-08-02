@@ -16,19 +16,26 @@ class ConfigError(SkyNetraError):
 
 
 class LayerViolationError(SkyNetraError):
-    """Raised when an illegal cross-layer import is detected."""
+    """Raised by test tooling if a runtime check detects an upward import.
+
+    Defensive enforcement only; the primary enforcement is import-linter in CI.
+    """
 
 
-class SimulationError(SkyNetraError):
-    """Raised when the simulation encounters a runtime error."""
-
-
-class PhysicsError(SkyNetraError):
-    """Raised when a physics computation fails."""
+class TopologyError(SkyNetraError):
+    """Raised when a topology/graph operation fails."""
 
 
 class RoutingError(SkyNetraError):
     """Raised when a routing operation fails."""
+
+
+class PhysicsModelError(SkyNetraError):
+    """Raised when a physics computation fails."""
+
+
+class SimulationError(SkyNetraError):
+    """Raised when the simulation encounters a runtime error."""
 
 
 class WorkloadError(SkyNetraError):
@@ -37,3 +44,16 @@ class WorkloadError(SkyNetraError):
 
 class MetricsError(SkyNetraError):
     """Raised when a metrics collection step fails."""
+
+
+__all__ = [
+    "SkyNetraError",
+    "ConfigError",
+    "LayerViolationError",
+    "TopologyError",
+    "RoutingError",
+    "PhysicsModelError",
+    "SimulationError",
+    "WorkloadError",
+    "MetricsError",
+]

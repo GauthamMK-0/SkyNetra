@@ -31,5 +31,8 @@ output/
 .env.*
 *.pem
 
+# Personal session context (not shared)
+SESSION_HISTORY.md
+
 # OS
 .DS_Store

@@ -44,3 +44,7 @@ def configure_logging(
         format=fmt or "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         stream=sys.stdout,
     )
+
+
+def get_logger(name: str) -> logging.Logger:
+    return logging.getLogger(name)

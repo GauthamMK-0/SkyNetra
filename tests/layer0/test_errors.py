@@ -4,10 +4,11 @@ from skynetra.foundation.errors import (
     ConfigError,
     LayerViolationError,
     MetricsError,
-    PhysicsError,
+    PhysicsModelError,
     RoutingError,
     SimulationError,
     SkyNetraError,
+    TopologyError,
     WorkloadError,
 )
 
@@ -16,7 +17,8 @@ def test_skynetra_error_is_base():
     assert issubclass(ConfigError, SkyNetraError)
     assert issubclass(LayerViolationError, SkyNetraError)
     assert issubclass(SimulationError, SkyNetraError)
-    assert issubclass(PhysicsError, SkyNetraError)
+    assert issubclass(PhysicsModelError, SkyNetraError)
+    assert issubclass(TopologyError, SkyNetraError)
     assert issubclass(RoutingError, SkyNetraError)
     assert issubclass(WorkloadError, SkyNetraError)
     assert issubclass(MetricsError, SkyNetraError)
@@ -45,9 +47,15 @@ def test_simulation_error():
     assert isinstance(exc, SimulationError)
 
 
-def test_physics_error():
-    exc = PhysicsError("orbit invalid")
-    assert isinstance(exc, PhysicsError)
+def test_physics_model_error():
+    exc = PhysicsModelError("orbit invalid")
+    assert isinstance(exc, PhysicsModelError)
+    assert isinstance(exc, SkyNetraError)
+
+
+def test_topology_error():
+    exc = TopologyError("graph disconnected")
+    assert isinstance(exc, TopologyError)
     assert isinstance(exc, SkyNetraError)
 
 
@@ -74,9 +82,10 @@ def test_all_subclasses_distinct():
         ConfigError,
         LayerViolationError,
         SimulationError,
-        PhysicsError,
+        PhysicsModelError,
+        TopologyError,
         RoutingError,
         WorkloadError,
         MetricsError,
     }
-    assert len(subclasses) == 7
+    assert len(subclasses) == 8

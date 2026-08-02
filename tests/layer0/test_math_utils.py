@@ -6,8 +6,13 @@ import numpy as np
 
 from skynetra.foundation.math_utils import (
     cartesian_to_spherical,
+    circular_velocity_kms,
+    free_space_path_loss_db,
     great_circle_distance,
+    great_circle_distance_km,
     kepler_eccentric_anomaly,
+    kepler_period_s,
+    orbital_elements_to_eci,
     rotation_matrix_x,
     rotation_matrix_y,
     rotation_matrix_z,
@@ -110,3 +115,89 @@ class TestGreatCircleDistance:
     def test_known_cities(self):
         d = great_circle_distance(52.52, 13.405, 48.8566, 2.3522)
         assert 800 < d < 1000
+
+
+class TestKeplerPeriod:
+    def test_550km_matches_known_period(self):
+        period = kepler_period_s(550.0)
+        assert abs(period - 5760.0) < 60.0
+
+    def test_monotonic_with_altitude(self):
+        low = kepler_period_s(300.0)
+        high = kepler_period_s(1200.0)
+        assert high > low
+
+    def test_positive(self):
+        assert kepler_period_s(0.0) > 0.0
+
+
+class TestCircularVelocity:
+    def test_value_positive(self):
+        v = circular_velocity_kms(550.0)
+        assert isinstance(v, float)
+        assert 7.0 < v < 8.0
+
+    def test_exact_value(self):
+        v = circular_velocity_kms(550.0)
+        assert abs(v - 7.588) < 0.01
+
+    def test_decreases_with_altitude(self):
+        assert circular_velocity_kms(1200.0) < circular_velocity_kms(300.0)
+
+
+class TestOrbitalElementsToECI:
+    def test_point_on_radius_sphere(self):
+        alt = 550.0
+        pos = orbital_elements_to_eci(53.0, 0.0, 90.0, alt)
+        radius = math.sqrt(pos[0] ** 2 + pos[1] ** 2 + pos[2] ** 2)
+        assert abs(radius - (6371.0 + alt)) < 1e-6
+
+    def test_equatorial_raan_zero(self):
+        pos = orbital_elements_to_eci(0.0, 0.0, 0.0, 550.0)
+        r = 6371.0 + 550.0
+        assert abs(pos[0] - r) < 1e-6
+        assert abs(pos[1]) < 1e-6
+        assert abs(pos[2]) < 1e-6
+
+    def test_equatorial_raan_90(self):
+        pos = orbital_elements_to_eci(0.0, 90.0, 0.0, 550.0)
+        r = 6371.0 + 550.0
+        assert abs(pos[0]) < 1e-6
+        assert abs(pos[1] - r) < 1e-6
+        assert abs(pos[2]) < 1e-6
+
+    def test_polar_z_axis(self):
+        pos = orbital_elements_to_eci(90.0, 0.0, 90.0, 550.0)
+        r = 6371.0 + 550.0
+        assert abs(pos[0]) < 1e-6
+        assert abs(pos[1]) < 1e-6
+        assert abs(pos[2] - r) < 1e-6
+
+
+class TestGreatCircleDistanceKm:
+    def test_same_point(self):
+        p = (6371.0, 0.0, 0.0)
+        assert abs(great_circle_distance_km(p, p)) < 1e-9
+
+    def test_antipodal(self):
+        a = (6371.0, 0.0, 0.0)
+        b = (-6371.0, 0.0, 0.0)
+        assert abs(great_circle_distance_km(a, b) - math.pi * 6371.0) < 1.0
+
+    def test_quarter_turn(self):
+        a = (6371.0, 0.0, 0.0)
+        b = (0.0, 6371.0, 0.0)
+        expected = 0.5 * math.pi * 6371.0
+        assert abs(great_circle_distance_km(a, b) - expected) < 1.0
+
+
+class TestFreeSpacePathLoss:
+    def test_reference_1km_1ghz(self):
+        db = free_space_path_loss_db(1.0, 1e9)
+        assert abs(db - 92.45) < 0.01
+
+    def test_increases_with_distance(self):
+        assert free_space_path_loss_db(10.0, 1e9) > free_space_path_loss_db(1.0, 1e9)
+
+    def test_increases_with_frequency(self):
+        assert free_space_path_loss_db(1.0, 2e9) > free_space_path_loss_db(1.0, 1e9)
