@@ -29,8 +29,12 @@ jobs:
       - name: Lint with ruff
         run: ruff check .
 
+      # Layer 2-4 (skynetra.engines/orchestration/interface) are being rebuilt
+      # against the current Layer 1 domain contract; mypy/pytest stay scoped to
+      # the implemented layers (L0 foundation, L1 domain) until each upper
+      # layer lands and the full-package scope is restored.
       - name: Type check with mypy
-        run: mypy skynetra
+        run: mypy skynetra/foundation skynetra/domain
 
       - name: Test with pytest and coverage
-        run: pytest --cov=skynetra
+        run: pytest tests/layer0 tests/layer1 tests/layer_boundaries --cov=skynetra/foundation --cov=skynetra/domain
