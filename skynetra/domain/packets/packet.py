@@ -13,6 +13,7 @@ May import from: itself, domain, foundation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from skynetra.foundation.types import NodeId
 
@@ -29,4 +30,4 @@ class Packet:
     priority: int = 0
     hops: int = 0
     path_history: list[str] = field(default_factory=list)
-    metadata: dict = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
