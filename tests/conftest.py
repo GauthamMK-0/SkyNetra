@@ -2,13 +2,9 @@ from __future__ import annotations
 
 from typing import Dict
 
-import networkx as nx
 import pytest
 
-from skynetra.domain.nodes.base import MetricsState, Node, PhysicsState
-from skynetra.domain.nodes.ground import GroundStation
-from skynetra.domain.nodes.pod import PodNode
-from skynetra.domain.nodes.relay import RelayNode
+from skynetra.domain.orbit.constellation import ConstellationConfig
 from skynetra.domain.packets.packet import Packet
 from skynetra.foundation.eventbus import EventBus
 from skynetra.foundation.types import NodeId, Vector3
@@ -25,70 +21,27 @@ def sample_vector3() -> Vector3:
 
 
 @pytest.fixture
-def sample_physics_state() -> PhysicsState:
-    return PhysicsState(
-        position=(7000.0, 0.0, 0.0),
-        velocity=(0.0, 7.5, 0.0),
-        temperature=280.0,
-        radiation_dose=0.5,
-        power_available=1000.0,
-        power_consumed=500.0,
+def constellation_3x3() -> ConstellationConfig:
+    return ConstellationConfig(
+        n_planes=3,
+        sats_per_plane=3,
+        altitude_km=550.0,
+        inclination_deg=53.0,
+        phase_offset_f=1,
+        raan_spread_deg=360.0,
     )
-
-
-@pytest.fixture
-def sample_metrics_state() -> MetricsState:
-    return MetricsState(
-        packets_sent=10,
-        packets_received=8,
-        packets_dropped=2,
-        compute_tasks=5,
-        compute_flops=1e12,
-        energy_consumed=200.0,
-    )
-
-
-@pytest.fixture
-def relay_a() -> RelayNode:
-    return RelayNode(NodeId("relay-a"))
-
-
-@pytest.fixture
-def relay_b() -> RelayNode:
-    return RelayNode(NodeId("relay-b"))
-
-
-@pytest.fixture
-def pod_node() -> PodNode:
-    return PodNode(NodeId("pod-1"), flops=2e12, memory_gb=32.0, storage_gb=500.0)
-
-
-@pytest.fixture
-def ground_station() -> GroundStation:
-    return GroundStation(NodeId("gs-1"), latitude=37.0, longitude=-122.0, altitude_m=100.0)
 
 
 @pytest.fixture
 def sample_packet() -> Packet:
     return Packet(
         packet_id="pkt-001",
-        source=NodeId("relay-a"),
-        destination=NodeId("gs-1"),
+        src=NodeId("relay-a"),
+        dst=NodeId("gs-1"),
         size_bytes=1500,
-        creation_time=0.0,
+        packet_type="data",
+        created_at=0.0,
     )
-
-
-@pytest.fixture
-def simple_graph() -> nx.Graph:
-    g = nx.Graph()
-    g.add_node("A", position=(0.0, 0.0, 7000.0))
-    g.add_node("B", position=(1000.0, 0.0, 7000.0))
-    g.add_node("C", position=(2000.0, 0.0, 7000.0))
-    g.add_edge("A", "B", quality=0.9)
-    g.add_edge("B", "C", quality=0.8)
-    g.add_edge("A", "C", quality=0.1)
-    return g
 
 
 @pytest.fixture
@@ -97,16 +50,4 @@ def node_positions() -> Dict[NodeId, Vector3]:
         NodeId("sat-1"): (7000.0, 0.0, 0.0),
         NodeId("sat-2"): (0.0, 7000.0, 0.0),
         NodeId("sat-3"): (0.0, 0.0, 7000.0),
-    }
-
-
-@pytest.fixture
-def sample_nodes_dict(
-    relay_a: RelayNode, relay_b: RelayNode, pod_node: PodNode, ground_station: GroundStation
-) -> Dict[NodeId, Node]:
-    return {
-        relay_a.node_id: relay_a,
-        relay_b.node_id: relay_b,
-        pod_node.node_id: pod_node,
-        ground_station.node_id: ground_station,
     }
