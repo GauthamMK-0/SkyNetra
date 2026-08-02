@@ -5,9 +5,10 @@ May import from: itself, domain, foundation.
 """
 
 from skynetra.domain.orbit.constellation import ConstellationConfig
-from skynetra.domain.orbit.propagator import PropagatorInterface
+from skynetra.domain.orbit.propagator import PropagatorInterface, ReferenceCircularPropagator
 
 __all__ = [
     "ConstellationConfig",
     "PropagatorInterface",
+    "ReferenceCircularPropagator",
 ]
