@@ -1,83 +1,179 @@
 from __future__ import annotations
 
-from typing import Dict
+import simpy
 
 from skynetra.domain.nodes.base import Node
 from skynetra.domain.nodes.pod import PodNode
 from skynetra.engines.workload.federated_learning import FederatedLearningWorkload
-from skynetra.engines.workload.profiles import WorkloadProfile
-from skynetra.foundation.types import NodeId, TimeSeconds
+from skynetra.engines.workload.interface import WorkloadGenerator
+from skynetra.engines.workload.registry import STRATEGIES
+from skynetra.foundation.types import NodeId
+
+
+def _pods(n: int) -> dict[NodeId, Node]:
+    return {NodeId(f"p{i}"): PodNode(NodeId(f"p{i}")) for i in range(n)}
+
+
+def _run(workload, registry: dict[NodeId, Node], until: float):
+    env = simpy.Environment()
+    sent = []
+    env.process(workload.generate(env, sent.append, registry))
+    env.run(until=until)
+    return sent
 
 
 class TestFederatedLearningWorkload:
-    def test_name(self):
-        profile = WorkloadProfile(name="federated")
-        wl = FederatedLearningWorkload(profile, aggregator=NodeId("agg"))
-        assert wl.name() == "federated_learning"
-
-    def test_generate_two_nodes(self):
-        profile = WorkloadProfile(name="federated", packet_size_bytes=2048)
-        wl = FederatedLearningWorkload(profile, aggregator=NodeId("agg"))
-        nodes: Dict[NodeId, Node] = {
-            NodeId("agg"): PodNode(NodeId("agg")),
-            NodeId("worker-1"): PodNode(NodeId("worker-1")),
-        }
-        packets = wl.generate(TimeSeconds(0.0), nodes)
-        assert len(packets) == 1
-        assert packets[0].source == "worker-1"
-        assert packets[0].destination == "agg"
-
-    def test_generate_multiple_workers(self):
-        profile = WorkloadProfile(name="federated")
-        wl = FederatedLearningWorkload(profile, aggregator=NodeId("agg"))
-        nodes: Dict[NodeId, Node] = {
-            NodeId("agg"): PodNode(NodeId("agg")),
-            NodeId("w1"): PodNode(NodeId("w1")),
-            NodeId("w2"): PodNode(NodeId("w2")),
-            NodeId("w3"): PodNode(NodeId("w3")),
-        }
-        packets = wl.generate(TimeSeconds(1.0), nodes)
-        assert len(packets) == 3
-
-    def test_aggregator_excluded(self):
-        profile = WorkloadProfile(name="federated")
-        wl = FederatedLearningWorkload(profile, aggregator=NodeId("agg"))
-        nodes: Dict[NodeId, Node] = {
-            NodeId("agg"): PodNode(NodeId("agg")),
-        }
-        packets = wl.generate(TimeSeconds(0.0), nodes)
-        assert packets == []
-
-    def test_generated_packet_properties(self):
-        profile = WorkloadProfile(name="federated", packet_size_bytes=4096, ttl=32, priority=1)
-        wl = FederatedLearningWorkload(profile, aggregator=NodeId("agg"))
-        nodes: Dict[NodeId, Node] = {
-            NodeId("agg"): PodNode(NodeId("agg")),
-            NodeId("worker"): PodNode(NodeId("worker")),
-        }
-        packets = wl.generate(TimeSeconds(5.0), nodes)
-        for pkt in packets:
-            assert pkt.size_bytes == 4096
-            assert pkt.ttl == 32
-            assert pkt.priority == 1
-            assert pkt.creation_time == 5.0
-            assert pkt.destination == "agg"
-
-    def test_empty_nodes(self):
-        profile = WorkloadProfile(name="federated")
-        wl = FederatedLearningWorkload(profile, aggregator=NodeId("agg"))
-        packets = wl.generate(TimeSeconds(0.0), {})
-        assert packets == []
-
     def test_is_workload_generator(self):
-        from skynetra.engines.workload.interface import WorkloadGenerator
-        profile = WorkloadProfile(name="federated")
-        assert isinstance(
-            FederatedLearningWorkload(profile, aggregator=NodeId("agg")),
-            WorkloadGenerator,
+        assert isinstance(FederatedLearningWorkload(), WorkloadGenerator)
+
+    def test_three_phase_round_sequence(self):
+        sent = _run(
+            FederatedLearningWorkload(
+                {
+                    "n_rounds": 1,
+                    "aggregator": NodeId("p0"),
+                    "round_interval_s": 10.0,
+                    "aggregate_time_s": 5.0,
+                }
+            ),
+            _pods(3),
+            100.0,
+        )
+        assert [p.packet_type for p in sent] == [
+            "fl_gather",
+            "fl_gather",
+            "fl_broadcast",
+            "fl_broadcast",
+        ]
+
+    def test_gather_workers_to_aggregator(self):
+        sent = _run(
+            FederatedLearningWorkload(
+                {
+                    "n_rounds": 1,
+                    "aggregator": NodeId("p0"),
+                    "round_interval_s": 10.0,
+                    "aggregate_time_s": 5.0,
+                }
+            ),
+            _pods(3),
+            100.0,
+        )
+        gathers = [p for p in sent if p.packet_type == "fl_gather"]
+        assert all(p.dst == NodeId("p0") for p in gathers)
+        assert {p.src for p in gathers} == {NodeId("p1"), NodeId("p2")}
+
+    def test_broadcast_aggregator_to_workers(self):
+        sent = _run(
+            FederatedLearningWorkload(
+                {
+                    "n_rounds": 1,
+                    "aggregator": NodeId("p0"),
+                    "round_interval_s": 10.0,
+                    "aggregate_time_s": 5.0,
+                }
+            ),
+            _pods(3),
+            100.0,
+        )
+        broadcasts = [p for p in sent if p.packet_type == "fl_broadcast"]
+        assert all(p.src == NodeId("p0") for p in broadcasts)
+        assert {p.dst for p in broadcasts} == {NodeId("p1"), NodeId("p2")}
+
+    def test_gather_then_aggregate_then_broadcast_timing(self):
+        sent = _run(
+            FederatedLearningWorkload(
+                {
+                    "n_rounds": 1,
+                    "aggregator": NodeId("p0"),
+                    "round_interval_s": 10.0,
+                    "aggregate_time_s": 5.0,
+                }
+            ),
+            _pods(3),
+            100.0,
+        )
+        assert all(p.created_at == 10.0 for p in sent if p.packet_type == "fl_gather")
+        assert all(
+            p.created_at == 15.0 for p in sent if p.packet_type == "fl_broadcast"
         )
 
+    def test_rounds_honored(self):
+        sent = _run(
+            FederatedLearningWorkload(
+                {
+                    "n_rounds": 3,
+                    "aggregator": NodeId("p0"),
+                    "round_interval_s": 10.0,
+                    "aggregate_time_s": 1.0,
+                }
+            ),
+            _pods(3),
+            1000.0,
+        )
+        assert len(sent) == 12
+        assert sum(1 for p in sent if p.packet_type == "fl_gather") == 6
+        assert sum(1 for p in sent if p.packet_type == "fl_broadcast") == 6
+
+    def test_default_aggregator_is_first_active_pod(self):
+        sent = _run(
+            FederatedLearningWorkload(
+                {"n_rounds": 1, "round_interval_s": 10.0, "aggregate_time_s": 5.0}
+            ),
+            _pods(3),
+            100.0,
+        )
+        for p in sent:
+            if p.packet_type == "fl_gather":
+                assert p.dst == NodeId("p0")
+
+    def test_faulted_aggregator_falls_back(self):
+        registry = _pods(3)
+        registry[NodeId("p0")].update_physics({"fault_probability": 1.0})
+        sent = _run(
+            FederatedLearningWorkload(
+                {
+                    "n_rounds": 1,
+                    "aggregator": NodeId("p0"),
+                    "round_interval_s": 10.0,
+                    "aggregate_time_s": 5.0,
+                }
+            ),
+            registry,
+            100.0,
+        )
+        for p in sent:
+            assert p.src != NodeId("p0") and p.dst != NodeId("p0")
+        assert any(p.packet_type == "fl_gather" for p in sent)
+
+    def test_aggregator_only_emits_nothing(self):
+        registry = {NodeId("p0"): PodNode(NodeId("p0"))}
+        sent = _run(
+            FederatedLearningWorkload(
+                {
+                    "n_rounds": 1,
+                    "aggregator": NodeId("p0"),
+                    "round_interval_s": 10.0,
+                    "aggregate_time_s": 5.0,
+                }
+            ),
+            registry,
+            100.0,
+        )
+        assert sent == []
+
+    def test_no_active_pods_emits_nothing(self):
+        registry = {NodeId("p0"): PodNode(NodeId("p0"))}
+        registry[NodeId("p0")].update_physics({"fault_probability": 1.0})
+        sent = _run(
+            FederatedLearningWorkload(
+                {"n_rounds": 1, "round_interval_s": 10.0, "aggregate_time_s": 5.0}
+            ),
+            registry,
+            100.0,
+        )
+        assert sent == []
+
     def test_registered(self):
-        from skynetra.engines.workload.registry import STRATEGIES
         assert "federated_learning" in STRATEGIES
         assert STRATEGIES["federated_learning"] is FederatedLearningWorkload
