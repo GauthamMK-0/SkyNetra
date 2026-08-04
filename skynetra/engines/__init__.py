@@ -1,26 +1,30 @@
 """
 Engines layer (L2) — routing, physics, workload algorithms.
 
+Layer 2 defines the swappable ALGORITHM families that populate the
+Layer 1 shapes: routing engines, physics models, workload generators.
+Strategies are registered in static dicts (no dynamic discovery).
+
+The physics and workload sub-packages are being rebuilt against the
+current Layer 1 domain contract; until they land, this package
+re-exports only the routing sub-package. The other sub-packages are
+re-exported here again as each one is rebuilt.
+
 May import from: itself, domain (L1), foundation (L0).
 """
 
 from __future__ import annotations
 
-from skynetra.engines.physics.interface import PhysicsModel
-from skynetra.engines.physics.registry import get_physics_model, list_physics_models
+from skynetra.engines.routing.backpressure import BackPressureConfig, BackPressureRouter
 from skynetra.engines.routing.interface import RoutingEngine
-from skynetra.engines.routing.registry import get_router, list_routers
-from skynetra.engines.workload.interface import WorkloadGenerator
-from skynetra.engines.workload.registry import get_workload, list_workloads
+from skynetra.engines.routing.registry import STRATEGIES, get_routing_engine
+from skynetra.engines.routing.shortest_path import ShortestPathRouter
 
 __all__ = [
     "RoutingEngine",
-    "get_router",
-    "list_routers",
-    "PhysicsModel",
-    "get_physics_model",
-    "list_physics_models",
-    "WorkloadGenerator",
-    "get_workload",
-    "list_workloads",
+    "ShortestPathRouter",
+    "BackPressureRouter",
+    "BackPressureConfig",
+    "STRATEGIES",
+    "get_routing_engine",
 ]
