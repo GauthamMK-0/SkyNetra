@@ -5,11 +5,6 @@ Layer 2 defines the swappable ALGORITHM families that populate the
 Layer 1 shapes: routing engines, physics models, workload generators.
 Strategies are registered in static dicts (no dynamic discovery).
 
-The workload sub-package is being rebuilt against the current Layer 1
-domain contract; until it lands, this package re-exports only the
-routing and physics sub-packages. The workload sub-package is
-re-exported here again once rebuilt.
-
 May import from: itself, domain (L1), foundation (L0).
 """
 
@@ -29,6 +24,20 @@ from skynetra.engines.routing.backpressure import BackPressureConfig, BackPressu
 from skynetra.engines.routing.interface import RoutingEngine
 from skynetra.engines.routing.registry import STRATEGIES, get_routing_engine
 from skynetra.engines.routing.shortest_path import ShortestPathRouter
+from skynetra.engines.workload.ai_training import AITrainingSyncWorkload
+from skynetra.engines.workload.federated_learning import FederatedLearningWorkload
+from skynetra.engines.workload.inference import InferenceQueryWorkload
+from skynetra.engines.workload.interface import WorkloadGenerator
+from skynetra.engines.workload.profiles import (
+    AITrainingSyncProfile,
+    FederatedLearningProfile,
+    ImageryDownlinkProfile,
+    InferenceQueryProfile,
+)
+from skynetra.engines.workload.registry import (
+    STRATEGIES as WORKLOAD_STRATEGIES,
+)
+from skynetra.engines.workload.registry import build_workloads
 
 __all__ = [
     "RoutingEngine",
@@ -45,4 +54,14 @@ __all__ = [
     "PhysicsOrchestrator",
     "PHYSICS_STRATEGIES",
     "build_physics_models",
+    "WorkloadGenerator",
+    "AITrainingSyncProfile",
+    "InferenceQueryProfile",
+    "FederatedLearningProfile",
+    "ImageryDownlinkProfile",
+    "AITrainingSyncWorkload",
+    "InferenceQueryWorkload",
+    "FederatedLearningWorkload",
+    "WORKLOAD_STRATEGIES",
+    "build_workloads",
 ]
