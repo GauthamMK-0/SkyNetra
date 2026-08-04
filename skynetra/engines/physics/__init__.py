@@ -9,7 +9,7 @@ from skynetra.engines.physics.interface import PhysicsModel
 from skynetra.engines.physics.orchestrator import PhysicsOrchestrator
 from skynetra.engines.physics.power import PowerModel
 from skynetra.engines.physics.radiation import RadiationModel
-from skynetra.engines.physics.registry import STRATEGIES, get_physics_model, list_physics_models
+from skynetra.engines.physics.registry import STRATEGIES, build_physics_models
 from skynetra.engines.physics.thermal import ThermalModel
 
 __all__ = [
@@ -20,6 +20,5 @@ __all__ = [
     "DopplerModel",
     "PhysicsOrchestrator",
     "STRATEGIES",
-    "get_physics_model",
-    "list_physics_models",
+    "build_physics_models",
 ]
