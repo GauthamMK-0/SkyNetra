@@ -1,73 +1,110 @@
 from __future__ import annotations
 
-import networkx as nx
+import pytest
+import simpy
 
+from skynetra.domain.nodes.base import Node
 from skynetra.domain.nodes.relay import RelayNode
+from skynetra.domain.packets.packet import Packet
+from skynetra.foundation.eventbus import EventBus
 from skynetra.foundation.types import NodeId
 from skynetra.orchestration.context import SimulationContext
+from skynetra.orchestration.events import (
+    PacketDeliveredEvent,
+    PacketDropEvent,
+    PhysicsInducedDropEvent,
+)
 from skynetra.orchestration.metrics.network import NetworkMetricsCollector
+
+
+def _packet(packet_id: str) -> Packet:
+    return Packet(
+        packet_id=packet_id,
+        src=NodeId("a"),
+        dst=NodeId("b"),
+        size_bytes=100,
+        packet_type="data",
+        created_at=0.0,
+    )
+
+
+def _context(nodes: dict[NodeId, Node]) -> SimulationContext:
+    return SimulationContext(env=simpy.Environment(), node_registry=nodes)
 
 
 class TestNetworkMetricsCollector:
     def test_name(self):
-        collector = NetworkMetricsCollector()
-        assert collector.name() == "network"
+        assert NetworkMetricsCollector().name() == "network"
 
-    def test_collect_empty_context(self):
-        collector = NetworkMetricsCollector()
-        ctx = SimulationContext()
-        metrics = collector.collect(ctx)
-        assert metrics["total_packets"] == 0
-        assert metrics["total_dropped"] == 0
-        assert metrics["edge_count"] == 0
-        assert metrics["node_count"] == 0
+    def test_counts_node_metrics_state(self):
+        node = RelayNode(NodeId("sat-1"))
+        node.process_packet(_packet("p1"))
+        node.forward_packet()
+        node.forward_packet()
+        context = _context({NodeId("sat-1"): node})
 
-    def test_collect_with_nodes(self):
-        collector = NetworkMetricsCollector()
-        node_a = RelayNode(NodeId("a"))
-        node_b = RelayNode(NodeId("b"))
-        node_a.metrics.packets_sent = 10
-        node_b.metrics.packets_received = 5
-        node_b.metrics.packets_dropped = 2
-
-        ctx = SimulationContext(
-            nodes={NodeId("a"): node_a, NodeId("b"): node_b},
-            topology_graph=_make_graph(3),
+        metrics = NetworkMetricsCollector().collect(context)
+        assert (
+            metrics["total_packets"]
+            == node.metrics_state["packets_sent"] + node.metrics_state["packets_received"]
         )
-        metrics = collector.collect(ctx)
-        assert metrics["total_packets"] == 15
-        assert metrics["total_dropped"] == 2
-        assert metrics["edge_count"] == 3
-        assert metrics["node_count"] == 4
 
-    def test_collect_topology_counts(self):
+    def test_tallies_delivered_and_dropped_via_events(self):
+        bus = EventBus()
         collector = NetworkMetricsCollector()
-        g = nx.Graph()
-        g.add_node("x")
-        g.add_node("y")
-        g.add_edge("x", "y")
-        ctx = SimulationContext(
-            nodes={NodeId("x"): RelayNode(NodeId("x"))},
-            topology_graph=g,
+        collector.attach(bus)
+
+        bus.publish(
+            PacketDeliveredEvent(
+                time=1.0,
+                event_type="packet_delivered",
+                packet=_packet("p1"),
+                node_id=NodeId("gs-1"),
+                latency_s=0.5,
+            )
         )
-        metrics = collector.collect(ctx)
-        assert metrics["edge_count"] == 1
-        assert metrics["node_count"] == 2
+        bus.publish(
+            PacketDeliveredEvent(
+                time=2.0,
+                event_type="packet_delivered",
+                packet=_packet("p2"),
+                node_id=NodeId("gs-1"),
+                latency_s=0.25,
+            )
+        )
+        bus.publish(
+            PacketDropEvent(
+                time=3.0,
+                event_type="packet_drop",
+                packet=_packet("p3"),
+                node_id=NodeId("sat-1"),
+                reason="no_route",
+            )
+        )
+        metrics = collector.collect(_context({}))
+        assert metrics["delivered"] == 2
+        assert metrics["dropped"] == 1
+        assert metrics["avg_latency_s"] == pytest.approx(0.375)
 
-    def test_is_metrics_collector(self):
-        from skynetra.orchestration.metrics.interface import MetricsCollector
-        assert isinstance(NetworkMetricsCollector(), MetricsCollector)
+    def test_physics_induced_drop_counts_as_drop(self):
+        bus = EventBus()
+        collector = NetworkMetricsCollector()
+        collector.attach(bus)
 
-    def test_registered(self):
-        from skynetra.orchestration.metrics.registry import STRATEGIES
-        assert "network" in STRATEGIES
-        assert STRATEGIES["network"] is NetworkMetricsCollector
+        bus.publish(
+            PhysicsInducedDropEvent(
+                time=1.0,
+                event_type="packet_drop",
+                packet=_packet("p1"),
+                node_id=NodeId("sat-1"),
+                reason="node_faulted",
+                cause="node_faulted",
+            )
+        )
+        metrics = collector.collect(_context({}))
+        assert metrics["delivered"] == 0
+        assert metrics["dropped"] == 1
 
-
-def _make_graph(num_edges: int) -> nx.Graph:
-    g = nx.Graph()
-    for i in range(num_edges + 1):
-        g.add_node(f"n{i}")
-    for i in range(num_edges):
-        g.add_edge(f"n{i}", f"n{i+1}")
-    return g
+    def test_avg_latency_zero_without_deliveries(self):
+        metrics = NetworkMetricsCollector().collect(_context({}))
+        assert metrics["avg_latency_s"] == 0.0

@@ -1,60 +1,111 @@
 """
 Orchestration layer (L3) — typed simulation events.
 
-May import from: itself, engines, domain, foundation.
+Every event is a plain dataclass carrying `time` (seconds, taken from
+`env.now` at publish time) and `event_type`. The L3 engine publishes
+these on the L0 `EventBus`, whose dispatch is inheritance-aware: a
+subscriber registered on `PacketDropEvent` also receives
+`PhysicsInducedDropEvent` instances.
+
+May import from: itself, orchestration, engines, domain, foundation.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict
+from typing import Any
 
 from skynetra.domain.packets.packet import Packet
-from skynetra.foundation.types import NodeId, TimeSeconds
+from skynetra.foundation.types import NodeId
 
 
 @dataclass
 class SimulationEvent:
-    time: TimeSeconds
+    """Base class for every L3 simulation event."""
+
+    time: float
     event_type: str
 
 
 @dataclass
-class SimulationStartEvent(SimulationEvent):
-    config: Dict[str, Any] = field(default_factory=dict)
+class TopologyUpdateEvent(SimulationEvent):
+    """Published when the topology graph is rebuilt/refreshed."""
 
-
-@dataclass
-class SimulationEndEvent(SimulationEvent):
-    total_duration: float = 0.0
-
-
-@dataclass
-class NodeEvent(SimulationEvent):
-    node_id: NodeId
-    data: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class PacketEvent(SimulationEvent):
-    packet: Packet
-    status: str = ""
-
-
-@dataclass
-class TopologyEvent(SimulationEvent):
+    topology_version: int = 0
     edge_count: int = 0
     node_count: int = 0
 
 
 @dataclass
-class PhysicsEvent(SimulationEvent):
+class PacketEvent(SimulationEvent):
+    """Base class for packet lifecycle events."""
+
+    packet: Packet
     node_id: NodeId
-    temperature: float = 0.0
-    radiation_dose: float = 0.0
-    power_available: float = 0.0
 
 
 @dataclass
-class MetricsEvent(SimulationEvent):
-    metrics: Dict[str, float] = field(default_factory=dict)
+class PacketArrivalEvent(PacketEvent):
+    """Published when a packet is accepted at a node."""
+
+    payload: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PacketTransmitEvent(PacketEvent):
+    """Published when a packet is transmitted from a node."""
+
+    to_node: NodeId | None = None
+
+
+@dataclass
+class PacketDropEvent(PacketEvent):
+    """Published when a packet is dropped (no route, full queue, ...)."""
+
+    reason: str = ""
+
+
+@dataclass
+class PhysicsInducedDropEvent(PacketDropEvent):
+    """A drop caused by a physics-induced fault (inherits PacketDropEvent)."""
+
+    cause: str = "physics"
+
+
+@dataclass
+class PacketDeliveredEvent(PacketEvent):
+    """Published when a packet reaches its destination node."""
+
+    latency_s: float = 0.0
+
+
+@dataclass
+class ComputeJobCompleteEvent(SimulationEvent):
+    """Published when a compute job finishes at a pod."""
+
+    node_id: NodeId
+    packet: Packet
+
+
+@dataclass
+class PhysicsTickEvent(SimulationEvent):
+    """Published after each physics tick; carries per-node state."""
+
+    tick: int = 0
+    node_state: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass
+class RoutingDecisionEvent(PacketEvent):
+    """Published for every routing decision made during forwarding."""
+
+    next_hop: NodeId | None = None
+    weight_overrides: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class EngineErrorEvent(SimulationEvent):
+    """Published when a Layer 2 component raises; the engine continues."""
+
+    component: str = ""
+    error: str = ""

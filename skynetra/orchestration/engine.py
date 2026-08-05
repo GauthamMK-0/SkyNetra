@@ -1,169 +1,662 @@
 """
-Orchestration layer (L3) — SkyNetraSimulation: SimPy core loop.
+Orchestration layer (L3) — OrbitDCSimulation: the SimPy core loop.
 
-May import from: itself, engines, domain, foundation.
+The engine owns the simulation time loop. Layer 2 components (routing,
+physics, workloads) are pure computations or generators; this module
+wraps them in SimPy processes:
+
+  * `_topology_update_loop`  — refresh satellite positions, rebuild the
+    Layer 1 graph, notify the routing engine, bump `topology_version`.
+  * `_physics_tick_loop`     — run the enabled physics models, apply
+    node/link updates to the live registry and graph, store routing
+    weight overrides on the context.
+  * `_metrics_snapshot_loop` — record periodic metric snapshots into
+    the context scratchpad.
+  * per-workload processes   — call `WorkloadGenerator.generate(env,
+    publish_packet, node_registry)`; each published packet is forwarded
+    hop-by-hop by its own `_forward_packet` process.
+
+Any exception raised by a Layer 2 component is caught, reported as an
+`EngineErrorEvent`, and the simulation continues.
+
+May import from: itself, orchestration, engines, domain, foundation.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Generator, List, Optional
+import math
+import random
+from dataclasses import dataclass, field
+from typing import Any, Generator
 
+import networkx as nx
 import simpy
-from simpy.events import Timeout
 
 from skynetra.domain.nodes.base import Node
+from skynetra.domain.nodes.ground import GroundStationNode
+from skynetra.domain.nodes.pod import PodNode
+from skynetra.domain.nodes.relay import RelayNode
+from skynetra.domain.orbit.constellation import ConstellationConfig
+from skynetra.domain.orbit.propagator import PropagatorInterface, ReferenceCircularPropagator
+from skynetra.domain.packets.packet import Packet
 from skynetra.domain.topology.graph import build_topology_graph
-from skynetra.domain.topology.isl import link_quality
+from skynetra.domain.topology.isl import EARTH_RADIUS_KM, compute_isl_link_quality
 from skynetra.engines.physics.orchestrator import PhysicsOrchestrator
+from skynetra.engines.physics.registry import build_physics_models
 from skynetra.engines.routing.interface import RoutingEngine
+from skynetra.engines.routing.registry import get_routing_engine
 from skynetra.engines.workload.interface import WorkloadGenerator
+from skynetra.engines.workload.registry import build_workloads
 from skynetra.foundation.eventbus import EventBus
-from skynetra.foundation.types import NodeId, TimeSeconds
+from skynetra.foundation.types import NodeId, Vector3
 from skynetra.orchestration.context import SimulationContext
 from skynetra.orchestration.events import (
-    PacketEvent,
-    PhysicsEvent,
-    SimulationEndEvent,
-    SimulationStartEvent,
-    TopologyEvent,
+    ComputeJobCompleteEvent,
+    EngineErrorEvent,
+    PacketArrivalEvent,
+    PacketDeliveredEvent,
+    PacketDropEvent,
+    PacketTransmitEvent,
+    PhysicsInducedDropEvent,
+    PhysicsTickEvent,
+    RoutingDecisionEvent,
+    SimulationEvent,
+    TopologyUpdateEvent,
 )
 from skynetra.orchestration.metrics.aggregator import MetricsAggregator
 from skynetra.orchestration.metrics.interface import MetricsCollector
+from skynetra.orchestration.metrics.network import NetworkMetricsCollector
+from skynetra.orchestration.metrics.registry import get_metrics_collector
 from skynetra.orchestration.results import SimulationResults
 
+MAX_FORWARD_HOPS = 64
+METRICS_SNAPSHOT_INTERVAL_S = 1.0
+POD_ATTACH_NEAREST_SATS = 2
 
-class SkyNetraSimulation:
+
+class OrbitDCSimulation:
+    """SimPy-based orchestration core for a low-Earth-orbit data center.
+
+    Construct via `from_spec` (everything derived from a spec) or
+    `from_layers` (caller-provided node registry and Layer 2 engines),
+    then `setup()` for the live context and `run()` for the results.
+    """
+
+    @dataclass
+    class SimulationSpec:
+        constellation: ConstellationConfig
+        n_pods: int = 1
+        n_ground_stations: int = 1
+        routing_strategy: str = "shortest_path"
+        routing_config: dict[str, Any] = field(default_factory=dict)
+        physics_specs: list[dict[str, Any]] = field(default_factory=list)
+        workload_specs: list[dict[str, Any]] = field(default_factory=list)
+        metrics_specs: list[dict[str, Any]] = field(default_factory=list)
+        sim_duration_s: float = 60.0
+        topology_update_interval_s: float = 10.0
+        physics_tick_interval_s: float = 1.0
+        seed: int = 42
+
     def __init__(
         self,
-        nodes: Dict[NodeId, Node],
+        constellation: ConstellationConfig,
+        node_registry: dict[NodeId, Node],
         routing_engine: RoutingEngine,
-        physics_orchestrator: Optional[PhysicsOrchestrator] = None,
-        workload_generators: Optional[List[WorkloadGenerator]] = None,
-        metrics_collectors: Optional[List[MetricsCollector]] = None,
-        dt: float = 1.0,
-        event_bus: Optional[EventBus] = None,
+        physics_orchestrator: PhysicsOrchestrator | None = None,
+        workloads: list[WorkloadGenerator] | None = None,
+        metrics_collectors: list[MetricsCollector] | None = None,
+        sim_duration_s: float = 60.0,
+        topology_update_interval_s: float = 10.0,
+        physics_tick_interval_s: float = 1.0,
+        seed: int = 42,
+        debug_routing: bool = False,
     ) -> None:
-        self._context = SimulationContext(
-            nodes=nodes,
-            routing_engine=routing_engine,
-            physics_orchestrator=physics_orchestrator or PhysicsOrchestrator([]),
-            workload_generators=workload_generators or [],
-            event_bus=event_bus or EventBus(),
-            current_time=0.0,
-            dt=dt,
-        )
-        self._metrics_aggregator = MetricsAggregator(metrics_collectors or [])
-        self._results: Optional[SimulationResults] = None
+        self._constellation = constellation
+        self._propagator: PropagatorInterface = ReferenceCircularPropagator()
+        self._node_registry = node_registry
+        self._routing_engine = routing_engine
+        self._physics_orchestrator = physics_orchestrator or PhysicsOrchestrator([])
+        self._workloads = workloads or []
+        self._metrics_collectors = self._resolve_collectors(metrics_collectors)
+        self._sim_duration_s = sim_duration_s
+        self._topology_update_interval_s = topology_update_interval_s
+        self._physics_tick_interval_s = physics_tick_interval_s
+        self._seed = seed
+        self._debug_routing = debug_routing
+        self._context: SimulationContext | None = None
+        self._event_log: list[SimulationEvent] = []
 
-    def run(self, duration: float) -> SimulationResults:
-        env = simpy.Environment()
-        self._context.current_time = 0.0
+    # ------------------------------------------------------------------
+    # Constructors
+    # ------------------------------------------------------------------
 
-        self._context.event_bus.publish(
-            SimulationStartEvent(time=TimeSeconds(0.0), event_type="simulation_start")
-        )
+    @classmethod
+    def from_spec(cls, spec: SimulationSpec) -> OrbitDCSimulation:
+        """Build a full simulation from a spec (nodes derived from the
+        constellation geometry)."""
+        propagator = ReferenceCircularPropagator()
+        node_registry: dict[NodeId, Node] = {}
+        for sat_id in propagator.get_sat_ids(spec.constellation):
+            node_registry[sat_id] = RelayNode(sat_id)
+        for i in range(1, spec.n_pods + 1):
+            node_registry[NodeId(f"pod-{i}")] = PodNode(NodeId(f"pod-{i}"))
+        for i in range(1, spec.n_ground_stations + 1):
+            node_registry[NodeId(f"gs-{i}")] = GroundStationNode(NodeId(f"gs-{i}"))
 
-        env.process(self._sim_loop(env, duration))
-        env.run(until=duration)
-
-        self._context.event_bus.publish(
-            SimulationEndEvent(
-                time=TimeSeconds(duration), event_type="simulation_end", total_duration=duration
-            )
-        )
-
-        self._results = SimulationResults(
-            metrics=self._metrics_aggregator.collect(self._context),
-            events=[],
-            duration=duration,
-        )
-        return self._results
-
-    def _sim_loop(self, env: simpy.Environment, duration: float) -> Generator[Any, None, None]:
-        while env.now < duration:
-            t = env.now
-            self._context.current_time = t
-
-            self._step_physics(t)
-            self._step_topology(t)
-            self._step_routing(t)
-            self._step_workload(t)
-            self._step_metrics(t)
-
-            yield Timeout(env, self._context.dt)
-
-    def _step_physics(self, t: float) -> None:
-        if self._context.physics_orchestrator:
-            states = {
-                nid: node.physics for nid, node in self._context.nodes.items()
-            }
-            updated = self._context.physics_orchestrator.apply(states, self._context.dt)
-            for nid, state in updated.items():
-                if nid in self._context.nodes:
-                    self._context.nodes[nid].physics = state
-                self._context.event_bus.publish(
-                    PhysicsEvent(
-                        time=TimeSeconds(t),
-                        event_type="physics_update",
-                        node_id=nid,
-                        temperature=state.temperature,
-                        radiation_dose=state.radiation_dose,
-                        power_available=state.power_available,
-                    )
-                )
-
-    def _step_topology(self, t: float) -> None:
-        positions = {
-            nid: node.physics.position for nid, node in self._context.nodes.items()
-        }
-        self._context.topology_graph = build_topology_graph(
-            positions=positions,
-            quality_fn=lambda a, b, pa, pb: link_quality(pa, pb),
-            threshold=0.01,
-        )
-        self._context.event_bus.publish(
-            TopologyEvent(
-                time=TimeSeconds(t),
-                event_type="topology_update",
-                edge_count=self._context.topology_graph.number_of_edges(),
-                node_count=self._context.topology_graph.number_of_nodes(),
-            )
+        collectors = (
+            [
+                get_metrics_collector(entry["name"], **entry.get("config", {}))
+                for entry in spec.metrics_specs
+            ]
+            if spec.metrics_specs
+            else []
         )
 
-    def _step_routing(self, t: float) -> None:
-        pass
-
-    def _step_workload(self, t: float) -> None:
-        for gen in self._context.workload_generators:
-            packets = gen.generate(
-                TimeSeconds(t), {nid: node for nid, node in self._context.nodes.items()}
-            )
-            for pkt in packets:
-                self._context.event_bus.publish(
-                    PacketEvent(
-                        time=TimeSeconds(t), event_type="packet_generated",
-                        packet=pkt, status="generated",
-                    )
-                )
-
-    def _step_metrics(self, t: float) -> None:
-        self._metrics_aggregator.collect(self._context)
+        return cls(
+            constellation=spec.constellation,
+            node_registry=node_registry,
+            routing_engine=get_routing_engine(spec.routing_strategy, spec.routing_config),
+            physics_orchestrator=PhysicsOrchestrator(build_physics_models(spec.physics_specs)),
+            workloads=build_workloads(spec.workload_specs),
+            metrics_collectors=collectors,
+            sim_duration_s=spec.sim_duration_s,
+            topology_update_interval_s=spec.topology_update_interval_s,
+            physics_tick_interval_s=spec.physics_tick_interval_s,
+            seed=spec.seed,
+        )
 
     @classmethod
     def from_layers(
         cls,
-        nodes: Dict[NodeId, Node],
+        constellation: ConstellationConfig,
+        node_registry: dict[NodeId, Node],
         routing_engine: RoutingEngine,
-        physics_orchestrator: Optional[PhysicsOrchestrator] = None,
-        workload_generators: Optional[List[WorkloadGenerator]] = None,
-        metrics_collectors: Optional[List[MetricsCollector]] = None,
-        dt: float = 1.0,
-    ) -> SkyNetraSimulation:
+        physics_orchestrator: PhysicsOrchestrator | None = None,
+        workloads: list[WorkloadGenerator] | None = None,
+        metrics_collectors: list[MetricsCollector] | None = None,
+        sim_duration_s: float = 60.0,
+        topology_update_interval_s: float = 10.0,
+        physics_tick_interval_s: float = 1.0,
+        seed: int = 42,
+    ) -> OrbitDCSimulation:
+        """Build a simulation from caller-provided Layer 1/2 objects."""
         return cls(
-            nodes=nodes,
+            constellation=constellation,
+            node_registry=node_registry,
             routing_engine=routing_engine,
             physics_orchestrator=physics_orchestrator,
-            workload_generators=workload_generators,
+            workloads=workloads,
             metrics_collectors=metrics_collectors,
-            dt=dt,
+            sim_duration_s=sim_duration_s,
+            topology_update_interval_s=topology_update_interval_s,
+            physics_tick_interval_s=physics_tick_interval_s,
+            seed=seed,
         )
+
+    @staticmethod
+    def _resolve_collectors(
+        collectors: list[MetricsCollector] | None,
+    ) -> list[MetricsCollector]:
+        resolved = list(collectors) if collectors is not None else []
+        if not any(c.name() == "network" for c in resolved):
+            resolved.append(NetworkMetricsCollector())
+        return resolved
+
+    # ------------------------------------------------------------------
+    # Setup / run
+    # ------------------------------------------------------------------
+
+    def setup(self) -> SimulationContext:
+        """Assemble the live `SimulationContext` (idempotent)."""
+        if self._context is not None:
+            return self._context
+
+        env = simpy.Environment()
+        event_bus = EventBus()
+        graph = self._build_graph(self._node_registry, time_s=0.0)
+        self._routing_engine.update_topology(graph)
+
+        for collector in self._metrics_collectors:
+            attach = getattr(collector, "attach", None)
+            if attach is not None:
+                attach(event_bus)
+
+        pod_ids = [nid for nid, node in self._node_registry.items() if node.node_type == "pod"]
+        ground_station_ids = [
+            nid for nid, node in self._node_registry.items() if node.node_type == "ground"
+        ]
+
+        context = SimulationContext(
+            env=env,
+            event_bus=event_bus,
+            node_registry=self._node_registry,
+            graph=graph,
+            routing_engine=self._routing_engine,
+            physics_orchestrator=self._physics_orchestrator,
+            metrics_aggregator=MetricsAggregator(self._metrics_collectors),
+            sim_duration_s=self._sim_duration_s,
+            topology_update_interval_s=self._topology_update_interval_s,
+            physics_tick_interval_s=self._physics_tick_interval_s,
+            seed=self._seed,
+            constellation=self._constellation,
+            propagator=self._propagator,
+            pod_ids=pod_ids,
+            ground_station_ids=ground_station_ids,
+            debug_routing=self._debug_routing,
+            scratchpad={
+                "sim_duration_s": self._sim_duration_s,
+                "seed": self._seed,
+                "metrics_snapshots": [],
+            },
+        )
+        self._context = context
+        return context
+
+    def run(self) -> SimulationResults:
+        """Run the simulation for `sim_duration_s` and return results."""
+        context = self.setup()
+        random.seed(context.seed)
+
+        context.env.process(self._topology_update_loop(context))
+        if context.physics_orchestrator is not None and context.physics_orchestrator.models:
+            context.env.process(self._physics_tick_loop(context))
+        for workload in self._workloads:
+            context.env.process(self._safe_workload(context, workload))
+        context.env.process(self._metrics_snapshot_loop(context))
+
+        context.env.run(until=context.sim_duration_s)
+        context.current_time_s = context.sim_duration_s
+        context.scratchpad["topology_version"] = context.topology_version
+
+        engine_metrics = (
+            context.metrics_aggregator.collect(context) if context.metrics_aggregator else {}
+        )
+        return SimulationResults(
+            engine_metrics=engine_metrics,
+            events=list(self._event_log),
+            duration=context.sim_duration_s,
+        )
+
+    # ------------------------------------------------------------------
+    # Topology construction
+    # ------------------------------------------------------------------
+
+    def _build_graph(self, node_registry: dict[NodeId, Node], time_s: float) -> nx.DiGraph:
+        positions_all = self._propagator.get_positions(time_s, self._constellation)
+        sat_ids = [
+            sat_id
+            for sat_id in self._propagator.get_sat_ids(self._constellation)
+            if sat_id in node_registry
+        ]
+        sat_positions = {sid: positions_all[sid] for sid in sat_ids}
+
+        pod_ids = [nid for nid, n in node_registry.items() if n.node_type == "pod"]
+        gs_ids = [nid for nid, n in node_registry.items() if n.node_type == "ground"]
+        gs_positions = {
+            gs_id: self._ground_station_position(index, len(gs_ids))
+            for index, gs_id in enumerate(gs_ids)
+        }
+
+        graph = build_topology_graph(
+            sat_positions=sat_positions,
+            isl_links=self._isl_links(sat_ids, self._constellation),
+            pod_ids=pod_ids,
+            ground_stations=gs_positions,
+        )
+        self._attach_pod_edges(graph, pod_ids, sat_positions, gs_positions)
+        return graph
+
+    @staticmethod
+    def _isl_links(
+        sat_ids: list[NodeId], constellation: ConstellationConfig
+    ) -> list[tuple[NodeId, NodeId]]:
+        """Deterministic ISL set: intra-plane rings plus inter-plane
+        links between same-index satellites of adjacent planes."""
+        if not sat_ids:
+            return []
+        planes = constellation.n_planes
+        sats_per_plane = constellation.sats_per_plane
+        if len(sat_ids) != planes * sats_per_plane:
+            return list(zip(sat_ids, sat_ids[1:] + sat_ids[:1]))
+        links: set[tuple[NodeId, NodeId]] = set()
+        for plane in range(planes):
+            for sat in range(sats_per_plane):
+                a = sat_ids[plane * sats_per_plane + sat]
+                b = sat_ids[plane * sats_per_plane + (sat + 1) % sats_per_plane]
+                links.add((a, b))
+        for sat in range(sats_per_plane):
+            for plane in range(planes):
+                a = sat_ids[plane * sats_per_plane + sat]
+                b = sat_ids[((plane + 1) % planes) * sats_per_plane + sat]
+                links.add((a, b))
+        return sorted(links)
+
+    @staticmethod
+    def _ground_station_position(index: int, count: int) -> Vector3:
+        angle = 2.0 * math.pi * index / max(count, 1)
+        return (
+            EARTH_RADIUS_KM * math.cos(angle),
+            EARTH_RADIUS_KM * math.sin(angle),
+            0.0,
+        )
+
+    @staticmethod
+    def _attach_pod_edges(
+        graph: nx.DiGraph,
+        pod_ids: list[NodeId],
+        sat_positions: dict[NodeId, Vector3],
+        gs_positions: dict[NodeId, Vector3],
+        nearest: int = POD_ATTACH_NEAREST_SATS,
+    ) -> None:
+        """Attach each pod to its `nearest` satellites (pods have no
+        incident edges in the Layer 1 graph builder)."""
+        for index, pod_id in enumerate(pod_ids):
+            pod_pos = OrbitDCSimulation._ground_station_position(index, max(len(pod_ids), 1))
+            ranked = sorted(
+                sat_positions.items(),
+                key=lambda item: math.dist(pod_pos, item[1]),
+            )
+            for sat_id, sat_pos in ranked[:nearest]:
+                distance_km = math.dist(pod_pos, sat_pos)
+                quality = compute_isl_link_quality(pod_pos, sat_pos, distance_km)
+                graph.add_edge(pod_id, sat_id, **quality)
+                graph.add_edge(sat_id, pod_id, **quality)
+
+    # ------------------------------------------------------------------
+    # SimPy processes
+    # ------------------------------------------------------------------
+
+    def _topology_update_loop(self, context: SimulationContext) -> Generator[Any, None, None]:
+        env = context.env
+        while True:
+            yield env.timeout(context.topology_update_interval_s)
+            context.current_time_s = env.now
+            context.graph = self._build_graph(context.node_registry, env.now)
+            if context.routing_engine is not None:
+                context.routing_engine.update_topology(context.graph)
+            context.topology_version += 1
+            self._publish(
+                context,
+                TopologyUpdateEvent(
+                    time=env.now,
+                    event_type="topology_update",
+                    topology_version=context.topology_version,
+                    edge_count=context.graph.number_of_edges(),
+                    node_count=context.graph.number_of_nodes(),
+                ),
+            )
+
+    def _physics_tick_loop(self, context: SimulationContext) -> Generator[Any, None, None]:
+        env = context.env
+        tick = 0
+        while True:
+            yield env.timeout(context.physics_tick_interval_s)
+            context.current_time_s = env.now
+            tick += 1
+            orchestrator = context.physics_orchestrator
+            if (
+                orchestrator is None
+                or context.propagator is None
+                or context.constellation is None
+            ):
+                continue
+            positions = context.propagator.get_positions(env.now, context.constellation)
+            try:
+                result = orchestrator.run_tick(
+                    env.now,
+                    context.physics_tick_interval_s,
+                    context.graph,
+                    context.node_registry,
+                    positions,
+                    context.constellation,
+                )
+            except Exception as exc:
+                self._publish(
+                    context,
+                    EngineErrorEvent(
+                        time=env.now,
+                        event_type="engine_error",
+                        component="physics",
+                        error=str(exc),
+                    ),
+                )
+                continue
+            for node_id, delta in result["node_updates"].items():
+                node = context.node_registry.get(node_id)
+                if node is not None:
+                    node.update_physics(delta)
+            for (node_a, node_b), attrs in result["link_updates"].items():
+                if context.graph.has_edge(node_a, node_b):
+                    context.graph.edges[node_a, node_b].update(attrs)
+            context.combined_weight_overrides = result["weight_overrides"]
+            self._publish(
+                context,
+                PhysicsTickEvent(
+                    time=env.now,
+                    event_type="physics_tick",
+                    tick=tick,
+                    node_state={
+                        nid: dict(node.physics_state) for nid, node in context.node_registry.items()
+                    },
+                ),
+            )
+
+    def _metrics_snapshot_loop(self, context: SimulationContext) -> Generator[Any, None, None]:
+        env = context.env
+        while True:
+            yield env.timeout(METRICS_SNAPSHOT_INTERVAL_S)
+            aggregator = context.metrics_aggregator
+            metrics = aggregator.collect(context) if aggregator is not None else {}
+            snapshots = context.scratchpad.setdefault("metrics_snapshots", [])
+            snapshots.append({"time": env.now, "metrics": metrics})
+
+    def _safe_workload(
+        self, context: SimulationContext, workload: WorkloadGenerator
+    ) -> Generator[Any, None, None]:
+        def publish_packet(packet: Packet) -> None:
+            context.env.process(self._forward_packet(packet, packet.src, context))
+
+        try:
+            yield from workload.generate(context.env, publish_packet, context.node_registry)
+        except Exception as exc:
+            self._publish(
+                context,
+                EngineErrorEvent(
+                    time=context.env.now,
+                    event_type="engine_error",
+                    component="workload",
+                    error=str(exc),
+                ),
+            )
+
+    # ------------------------------------------------------------------
+    # Packet forwarding
+    # ------------------------------------------------------------------
+
+    def _forward_packet(
+        self,
+        packet: Packet,
+        current_node_id: NodeId,
+        context: SimulationContext,
+    ) -> Generator[Any, None, None]:
+        env = context.env
+        registry = context.node_registry
+        current = registry.get(current_node_id)
+        if current is None or not current.process_packet(packet):
+            self._drop(context, packet, current_node_id, "source_unavailable")
+            return
+
+        packet.hops = 0
+        packet.path_history = [str(current_node_id)]
+        self._publish(
+            context,
+            PacketArrivalEvent(
+                time=env.now,
+                event_type="packet_arrival",
+                packet=packet,
+                node_id=current_node_id,
+            ),
+        )
+
+        while env.now < context.sim_duration_s and packet.hops < MAX_FORWARD_HOPS:
+            if context.routing_engine is None:
+                self._drop(context, packet, current_node_id, "no_routing_engine")
+                return
+            try:
+                next_hop = context.routing_engine.select_next_hop(
+                    packet,
+                    current_node_id,
+                    context.graph,
+                    registry,
+                    context.combined_weight_overrides,
+                )
+            except Exception as exc:
+                self._publish(
+                    context,
+                    EngineErrorEvent(
+                        time=env.now,
+                        event_type="engine_error",
+                        component="routing",
+                        error=str(exc),
+                    ),
+                )
+                self._drop(context, packet, current_node_id, "routing_error")
+                return
+
+            self._publish(
+                context,
+                RoutingDecisionEvent(
+                    time=env.now,
+                    event_type="routing_decision",
+                    packet=packet,
+                    node_id=current_node_id,
+                    next_hop=next_hop,
+                    weight_overrides={
+                        str(link_id): value
+                        for link_id, value in context.combined_weight_overrides.items()
+                    },
+                ),
+            )
+
+            if (
+                next_hop is None
+                or next_hop == current_node_id
+                or not context.graph.has_edge(current_node_id, next_hop)
+            ):
+                self._drop(context, packet, current_node_id, "no_route")
+                return
+
+            self._publish(
+                context,
+                PacketTransmitEvent(
+                    time=env.now,
+                    event_type="packet_transmit",
+                    packet=packet,
+                    node_id=current_node_id,
+                    to_node=next_hop,
+                ),
+            )
+            delay_s = (
+                float(
+                    context.graph.edges[current_node_id, next_hop].get("propagation_delay_ms", 1.0)
+                )
+                / 1000.0
+            )
+            yield env.timeout(delay_s)
+
+            if next_hop == packet.dst:
+                self._deliver(context, packet, next_hop)
+                return
+
+            next_node = registry.get(next_hop)
+            if next_node is None or not next_node.process_packet(packet):
+                self._drop(context, packet, next_hop, "node_unavailable")
+                return
+            self._publish(
+                context,
+                PacketArrivalEvent(
+                    time=env.now,
+                    event_type="packet_arrival",
+                    packet=packet,
+                    node_id=next_hop,
+                ),
+            )
+            packet.hops += 1
+            packet.path_history.append(str(next_hop))
+            current_node_id = next_hop
+            current = next_node
+
+        self._drop(context, packet, current_node_id, "max_hops")
+
+    @staticmethod
+    def _accept(context: SimulationContext, node: Node, packet: Packet) -> bool:
+        """Accept `packet` at `node`; routes counters on the node."""
+        return node.process_packet(packet)
+
+    def _deliver(
+        self,
+        context: SimulationContext,
+        packet: Packet,
+        dst: NodeId,
+    ) -> None:
+        env = context.env
+        dst_node = context.node_registry.get(dst)
+        if dst_node is None or not dst_node.process_packet(packet):
+            self._drop(context, packet, dst, "destination_unavailable")
+            return
+        self._publish(
+            context,
+            PacketDeliveredEvent(
+                time=env.now,
+                event_type="packet_delivered",
+                packet=packet,
+                node_id=dst,
+                latency_s=max(0.0, env.now - packet.created_at),
+            ),
+        )
+        if dst_node.node_type == "pod":
+            self._publish(
+                context,
+                ComputeJobCompleteEvent(
+                    time=env.now,
+                    event_type="compute_job_complete",
+                    node_id=dst,
+                    packet=packet,
+                ),
+            )
+            compute = getattr(dst_node, "process_compute", None)
+            if compute is not None:
+                compute()
+
+    def _drop(
+        self, context: SimulationContext, packet: Packet, node_id: NodeId, reason: str
+    ) -> None:
+        node = context.node_registry.get(node_id)
+        physics_induced = node is not None and not node.is_operational()
+        if physics_induced:
+            self._publish(
+                context,
+                PhysicsInducedDropEvent(
+                    time=context.env.now,
+                    event_type="packet_drop",
+                    packet=packet,
+                    node_id=node_id,
+                    reason=reason,
+                    cause="node_faulted",
+                ),
+            )
+        else:
+            self._publish(
+                context,
+                PacketDropEvent(
+                    time=context.env.now,
+                    event_type="packet_drop",
+                    packet=packet,
+                    node_id=node_id,
+                    reason=reason,
+                ),
+            )
+
+    def _publish(self, context: SimulationContext, event: SimulationEvent) -> None:
+        context.event_bus.publish(event)
+        self._event_log.append(event)
