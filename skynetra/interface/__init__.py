@@ -15,7 +15,12 @@ from skynetra.interface.config.defaults import (
     save_config,
 )
 from skynetra.interface.config.schema import FullConfig
-from skynetra.interface.reporting import compare_runs, export_results
+from skynetra.interface.reporting import (
+    export_results_csv,
+    export_results_json,
+    print_comparison_table,
+    save_all_plots,
+)
 
 __all__ = [
     "FullConfig",
@@ -25,6 +30,8 @@ __all__ = [
     "get_minimal_config",
     "config_to_simulation_spec",
     "main",
-    "export_results",
-    "compare_runs",
+    "export_results_csv",
+    "export_results_json",
+    "print_comparison_table",
+    "save_all_plots",
 ]
