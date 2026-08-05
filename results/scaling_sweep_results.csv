@@ -1,0 +1,5 @@
+n_planes,sats_per_plane,constellation_size,num_pods,routing,physics_mode,n_runs,delivered_mean,delivered_std,dropped_mean,dropped_std,transmitted_mean,transmitted_std,avg_latency_s_mean,avg_latency_s_std,drop_rate_mean,drop_rate_std,physics_caused_drops_mean,physics_caused_drops_std
+3,6,18,2,shortest_path,disabled,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+3,6,18,2,shortest_path,thermal_only,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+3,6,18,2,backpressure,disabled,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+3,6,18,2,backpressure,thermal_only,1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0

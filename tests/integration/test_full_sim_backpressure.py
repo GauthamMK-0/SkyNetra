@@ -1,79 +1,41 @@
+"""Integration: full 300s simulation with backpressure routing, plus a
+SP-vs-BP head-to-head comparison on identical inputs."""
+
 from __future__ import annotations
 
-from typing import Dict
-
-from skynetra.domain.nodes.base import Node
-from skynetra.domain.nodes.ground import GroundStation
-from skynetra.domain.nodes.relay import RelayNode
-from skynetra.engines.routing.backpressure import BackPressureRouter
-from skynetra.engines.workload.ai_training import AITrainingWorkload
-from skynetra.engines.workload.profiles import WorkloadProfile
-from skynetra.foundation.types import NodeId
-from skynetra.orchestration.engine import SkyNetraSimulation
-from skynetra.orchestration.metrics.network import NetworkMetricsCollector
-from skynetra.orchestration.results import SimulationResults
+from skynetra.interface.config.defaults import FullConfig, config_to_simulation_spec
+from skynetra.orchestration.engine import OrbitDCSimulation
 
 
-def test_backpressure_simulation_returns_results():
-    nodes: Dict[NodeId, Node] = {
-        NodeId("sat-1"): RelayNode(NodeId("sat-1")),
-        NodeId("sat-2"): RelayNode(NodeId("sat-2")),
-        NodeId("gs-1"): GroundStation(NodeId("gs-1")),
-    }
-    router = BackPressureRouter()
-    router.update_backlog("sat-1->sat-2", 5.0)
-    router.update_backlog("sat-2->gs-1", 3.0)
-
-    profile = WorkloadProfile(name="test", packet_size_bytes=256)
-    workload = AITrainingWorkload(profile)
-
-    sim = SkyNetraSimulation(
-        nodes=nodes,
-        routing_engine=router,
-        workload_generators=[workload],
-        metrics_collectors=[NetworkMetricsCollector()],
-        dt=1.0,
+def _config(strategy: str) -> FullConfig:
+    return FullConfig(
+        simulation={"duration_s": 300.0, "seed": 42},
+        constellation={"n_planes": 3, "sats_per_plane": 6},
+        pods={"n_pods": 2},
+        ground_stations={"n_ground_stations": 2},
+        routing={"strategy": strategy},
     )
-    results = sim.run(duration=3.0)
-
-    assert isinstance(results, SimulationResults)
-    assert results.duration == 3.0
 
 
-def test_backpressure_multiple_updates():
-    nodes: Dict[NodeId, Node] = {
-        NodeId("a"): RelayNode(NodeId("a")),
-        NodeId("b"): RelayNode(NodeId("b")),
-        NodeId("c"): RelayNode(NodeId("c")),
-    }
-    router = BackPressureRouter()
-    router.update_backlog("a->b", 10.0)
-    router.update_backlog("b->c", 20.0)
-    router.update_backlog("a->c", 5.0)
+def test_full_sim_backpressure() -> None:
+    results = OrbitDCSimulation.from_spec(config_to_simulation_spec(_config("backpressure"))).run()
 
-    sim = SkyNetraSimulation(
-        nodes=nodes,
-        routing_engine=router,
-        dt=0.5,
-    )
-    results = sim.run(duration=1.0)
-    assert results.duration == 1.0
+    assert results.duration == 300.0
+    net = results.engine_metrics["network_metrics"]
+    # Backpressure is a greedy per-hop router: on ring topologies it can
+    # cycle to the hop limit, so no delivery guarantee is asserted here —
+    # completion with a consistent engine_metrics summary is the contract.
+    assert "delivered" in net
+    assert "drop_rate" in net
+    assert net["dropped"] >= 0
 
 
-def test_backpressure_with_workload_produces_metrics():
-    nodes: Dict[NodeId, Node] = {
-        NodeId("sat-1"): RelayNode(NodeId("sat-1")),
-        NodeId("sat-2"): RelayNode(NodeId("sat-2")),
-    }
-    router = BackPressureRouter()
-    profile = WorkloadProfile(name="bp-test", packet_size_bytes=128, ttl=10)
-    workload = AITrainingWorkload(profile)
+def test_sp_vs_bp_results_differ() -> None:
+    sp = OrbitDCSimulation.from_spec(config_to_simulation_spec(_config("shortest_path"))).run()
+    bp = OrbitDCSimulation.from_spec(config_to_simulation_spec(_config("backpressure"))).run()
 
-    sim = SkyNetraSimulation(
-        nodes=nodes,
-        routing_engine=router,
-        workload_generators=[workload],
-        metrics_collectors=[NetworkMetricsCollector()],
-    )
-    results = sim.run(duration=2.0)
-    assert "network" in results.metrics
+    sp_net = sp.engine_metrics["network_metrics"]
+    bp_net = bp.engine_metrics["network_metrics"]
+    headline_sp = (sp_net["delivered"], sp_net["dropped"], sp_net["avg_latency_s"])
+    headline_bp = (bp_net["delivered"], bp_net["dropped"], bp_net["avg_latency_s"])
+    assert headline_sp != headline_bp

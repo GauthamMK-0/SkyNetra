@@ -1,60 +1,41 @@
+"""Integration: full 300s simulation, shortest_path, built-in workloads.
+
+Drives the whole stack through the Layer 4 config -> Layer 3 spec ->
+engine path, exactly like `orbitdc run` does.
+"""
+
 from __future__ import annotations
 
-from typing import Dict
-
-from skynetra.domain.nodes.base import Node
-from skynetra.domain.nodes.ground import GroundStation
-from skynetra.domain.nodes.relay import RelayNode
-from skynetra.engines.routing.shortest_path import ShortestPathRouter
-from skynetra.foundation.types import NodeId
-from skynetra.orchestration.engine import SkyNetraSimulation
-from skynetra.orchestration.metrics.network import NetworkMetricsCollector
-from skynetra.orchestration.metrics.topology_metrics import TopologyMetricsCollector
-from skynetra.orchestration.results import SimulationResults
+from skynetra.interface.config.defaults import FullConfig, config_to_simulation_spec
+from skynetra.orchestration.engine import OrbitDCSimulation
 
 
-def test_shortest_path_simulation_returns_results():
-    nodes: Dict[NodeId, Node] = {
-        NodeId("sat-1"): RelayNode(NodeId("sat-1")),
-        NodeId("sat-2"): RelayNode(NodeId("sat-2")),
-        NodeId("sat-3"): RelayNode(NodeId("sat-3")),
-        NodeId("gs-1"): GroundStation(NodeId("gs-1")),
-    }
-    router = ShortestPathRouter()
-    collectors = [NetworkMetricsCollector(), TopologyMetricsCollector()]
-
-    sim = SkyNetraSimulation(
-        nodes=nodes,
-        routing_engine=router,
-        metrics_collectors=collectors,
-        dt=1.0,
+def _base_config() -> FullConfig:
+    return FullConfig(
+        simulation={"duration_s": 300.0, "seed": 42},
+        constellation={"n_planes": 3, "sats_per_plane": 6},
+        pods={"n_pods": 2},
+        ground_stations={"n_ground_stations": 2},
+        routing={"strategy": "shortest_path"},
     )
-    results = sim.run(duration=2.0)
-
-    assert isinstance(results, SimulationResults)
-    assert results.duration == 2.0
-    assert "network" in results.metrics
-    assert "topology" in results.metrics
 
 
-def test_simulation_runs_with_single_node():
-    nodes: Dict[NodeId, Node] = {
-        NodeId("sat-1"): RelayNode(NodeId("sat-1")),
-    }
-    router = ShortestPathRouter()
-    sim = SkyNetraSimulation(nodes=nodes, routing_engine=router)
-    results = sim.run(duration=0.5)
-    assert results.duration == 0.5
-    assert isinstance(results, SimulationResults)
+def test_full_sim_shortest_path() -> None:
+    results = OrbitDCSimulation.from_spec(config_to_simulation_spec(_base_config())).run()
+
+    assert results.duration == 300.0
+
+    for name in ("network_metrics", "compute_metrics", "topology_metrics"):
+        assert name in results.engine_metrics, f"missing {name}"
+
+    net = results.engine_metrics["network_metrics"]
+    assert net["delivered"] > 0
+    assert net["drop_rate"] < 0.5
+    assert net["avg_latency_s"] > 0
+    assert net["avg_latency_s"] * 1000.0 > 0  # mean e2e latency (ms) > 0
 
 
-def test_two_node_shortest_path():
-    nodes: Dict[NodeId, Node] = {
-        NodeId("a"): RelayNode(NodeId("a")),
-        NodeId("b"): RelayNode(NodeId("b")),
-    }
-    router = ShortestPathRouter()
-    sim = SkyNetraSimulation(nodes=nodes, routing_engine=router, dt=0.5)
-    results = sim.run(duration=1.0)
-    assert results.duration == 1.0
-    assert isinstance(results, SimulationResults)
+def test_full_sim_shortest_path_is_deterministic() -> None:
+    first = OrbitDCSimulation.from_spec(config_to_simulation_spec(_base_config())).run()
+    second = OrbitDCSimulation.from_spec(config_to_simulation_spec(_base_config())).run()
+    assert first.engine_metrics == second.engine_metrics

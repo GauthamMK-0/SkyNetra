@@ -1,0 +1,110 @@
+{
+  "config": {
+    "constellation_sizes": [
+      [
+        3,
+        6
+      ]
+    ],
+    "num_pods_options": [
+      2
+    ],
+    "routing_strategies": [
+      "shortest_path",
+      "backpressure"
+    ],
+    "physics_modes": [
+      "disabled",
+      "thermal_only"
+    ],
+    "n_runs": 1,
+    "sim_duration_s": 10.0,
+    "base_seed": 42
+  },
+  "results": [
+    {
+      "n_planes": 3,
+      "sats_per_plane": 6,
+      "constellation_size": 18,
+      "num_pods": 2,
+      "routing": "shortest_path",
+      "physics_mode": "disabled",
+      "n_runs": 1,
+      "delivered_mean": 0.0,
+      "delivered_std": 0.0,
+      "dropped_mean": 0.0,
+      "dropped_std": 0.0,
+      "transmitted_mean": 0.0,
+      "transmitted_std": 0.0,
+      "avg_latency_s_mean": 0.0,
+      "avg_latency_s_std": 0.0,
+      "drop_rate_mean": 0.0,
+      "drop_rate_std": 0.0,
+      "physics_caused_drops_mean": 0.0,
+      "physics_caused_drops_std": 0.0
+    },
+    {
+      "n_planes": 3,
+      "sats_per_plane": 6,
+      "constellation_size": 18,
+      "num_pods": 2,
+      "routing": "shortest_path",
+      "physics_mode": "thermal_only",
+      "n_runs": 1,
+      "delivered_mean": 0.0,
+      "delivered_std": 0.0,
+      "dropped_mean": 0.0,
+      "dropped_std": 0.0,
+      "transmitted_mean": 0.0,
+      "transmitted_std": 0.0,
+      "avg_latency_s_mean": 0.0,
+      "avg_latency_s_std": 0.0,
+      "drop_rate_mean": 0.0,
+      "drop_rate_std": 0.0,
+      "physics_caused_drops_mean": 0.0,
+      "physics_caused_drops_std": 0.0
+    },
+    {
+      "n_planes": 3,
+      "sats_per_plane": 6,
+      "constellation_size": 18,
+      "num_pods": 2,
+      "routing": "backpressure",
+      "physics_mode": "disabled",
+      "n_runs": 1,
+      "delivered_mean": 0.0,
+      "delivered_std": 0.0,
+      "dropped_mean": 0.0,
+      "dropped_std": 0.0,
+      "transmitted_mean": 0.0,
+      "transmitted_std": 0.0,
+      "avg_latency_s_mean": 0.0,
+      "avg_latency_s_std": 0.0,
+      "drop_rate_mean": 0.0,
+      "drop_rate_std": 0.0,
+      "physics_caused_drops_mean": 0.0,
+      "physics_caused_drops_std": 0.0
+    },
+    {
+      "n_planes": 3,
+      "sats_per_plane": 6,
+      "constellation_size": 18,
+      "num_pods": 2,
+      "routing": "backpressure",
+      "physics_mode": "thermal_only",
+      "n_runs": 1,
+      "delivered_mean": 0.0,
+      "delivered_std": 0.0,
+      "dropped_mean": 0.0,
+      "dropped_std": 0.0,
+      "transmitted_mean": 0.0,
+      "transmitted_std": 0.0,
+      "avg_latency_s_mean": 0.0,
+      "avg_latency_s_std": 0.0,
+      "drop_rate_mean": 0.0,
+      "drop_rate_std": 0.0,
+      "physics_caused_drops_mean": 0.0,
+      "physics_caused_drops_std": 0.0
+    }
+  ]
+}
