@@ -1,7 +1,7 @@
 """Integration: full 300s simulation, shortest_path, built-in workloads.
 
 Drives the whole stack through the Layer 4 config -> Layer 3 spec ->
-engine path, exactly like `orbitdc run` does.
+engine path, exactly like `skynetra run` does.
 """
 
 from __future__ import annotations

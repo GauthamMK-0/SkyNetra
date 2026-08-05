@@ -62,7 +62,7 @@ def test_run_invalid_routing_choice(tmp_path: Path) -> None:
 
 
 def test_gen_config(tmp_path: Path) -> None:
-    out = str(tmp_path / "orbitdc_config.yaml")
+    out = str(tmp_path / "skynetra_config.yaml")
     runner = CliRunner()
     result = runner.invoke(main, ["gen-config", "--output", out])
     assert result.exit_code == 0, result.output

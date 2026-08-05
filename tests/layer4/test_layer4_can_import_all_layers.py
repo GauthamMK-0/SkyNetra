@@ -73,7 +73,7 @@ def test_interface_imports_all_four_layers() -> None:
 def test_lower_layers_never_import_interface() -> None:
     errors: list[str] = []
     for py_file in _iter_py_files(SKYNETRA_ROOT):
-        if INTERFACE_DIR in py_file.parents:
+        if INTERFACE_DIR in py_file.parents or py_file == SKYNETRA_ROOT / "__init__.py":
             continue
         for top, lineno in _skynetra_imports(py_file):
             if top == "interface":

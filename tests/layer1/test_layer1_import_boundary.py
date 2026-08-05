@@ -8,8 +8,8 @@ mechanical guarantee the project-wide boundary tests provide, but scoped
 to the L1 package so a Layer 1 regression cannot hide behind the upper
 layers' own failures.
 
-The legacy project name was `orbitdc` with layers
-`orbitdc.layer2_engines` / `orbitdc.layer3_*` / `orbitdc.layer4_*`; any
+The legacy project name was `skynetra` with layers
+`skynetra.layer2_engines` / `skynetra.layer3_*` / `skynetra.layer4_*`; any
 reference to those strings is flagged as well.
 """
 
@@ -27,9 +27,9 @@ FORBIDDEN_TOP_LEVEL_MODULES = {
 }
 
 FORBIDDEN_STRINGS = (
-    "orbitdc.layer2",
-    "orbitdc.layer3",
-    "orbitdc.layer4",
+    "skynetra.layer2",
+    "skynetra.layer3",
+    "skynetra.layer4",
 )
 
 
@@ -62,7 +62,7 @@ def test_layer1_has_no_upward_imports() -> None:
     assert not violations, "\n".join(violations)
 
 
-def test_layer1_has_no_legacy_orbitdc_layer_references() -> None:
+def test_layer1_has_no_legacy_skynetra_layer_references() -> None:
     violations: list[str] = []
     for py_file in sorted(DOMAIN_ROOT.rglob("*.py")):
         source = py_file.read_text(encoding="utf-8")

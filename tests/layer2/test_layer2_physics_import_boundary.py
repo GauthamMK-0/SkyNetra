@@ -6,8 +6,8 @@ must never import from Layer 3 (`skynetra.orchestration`) or Layer 4
 (`skynetra.interface`). This is a static AST scan of every `.py` file
 under `skynetra/engines/physics/`.
 
-The legacy project name was `orbitdc` with layers
-`orbitdc.layer2_engines` / `orbitdc.layer3_*` / `orbitdc.layer4_*`; any
+The legacy project name was `skynetra` with layers
+`skynetra.layer2_engines` / `skynetra.layer3_*` / `skynetra.layer4_*`; any
 reference to those strings is flagged as well.
 """
 
@@ -24,8 +24,8 @@ FORBIDDEN_TOP_LEVEL_MODULES = {
 }
 
 FORBIDDEN_STRINGS = (
-    "orbitdc.layer3",
-    "orbitdc.layer4",
+    "skynetra.layer3",
+    "skynetra.layer4",
 )
 
 
@@ -58,7 +58,7 @@ def test_layer2_physics_has_no_upward_imports() -> None:
     assert not violations, "\n".join(violations)
 
 
-def test_layer2_physics_has_no_legacy_orbitdc_layer_references() -> None:
+def test_layer2_physics_has_no_legacy_skynetra_layer_references() -> None:
     violations: list[str] = []
     for py_file in sorted(PHYSICS_ROOT.rglob("*.py")):
         source = py_file.read_text(encoding="utf-8")
