@@ -47,6 +47,9 @@ dev = [
     "import-linter>=2.0",
 ]
 
+[project.scripts]
+orbitdc = "skynetra.interface.cli:main"
+
 [tool.setuptools.packages.find]
 include = ["skynetra*"]
 

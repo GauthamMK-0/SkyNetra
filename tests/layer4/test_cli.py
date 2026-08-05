@@ -1,74 +1,126 @@
+"""Layer 4 CLI tests (Click CliRunner)."""
+
 from __future__ import annotations
 
-import tempfile
+import json
 from pathlib import Path
 
-import yaml
 from click.testing import CliRunner
 
-from skynetra.interface.cli import skynetra_cli
+from skynetra.interface.cli import main
+from skynetra.interface.config.defaults import load_config
 
 
-class TestCli:
-    def setup_method(self):
-        self.runner = CliRunner()
+def test_run_shortest_path(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["run", "--duration", "60", "--routing", "shortest_path", "--output", str(tmp_path)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Simulation complete" in result.output
+    results = json.loads((tmp_path / "sim_results.json").read_text())
+    assert results["duration"] == 60.0
 
-    def test_cli_help(self):
-        result = self.runner.invoke(skynetra_cli, ["--help"])
-        assert result.exit_code == 0
-        assert "Usage:" in result.output
 
-    def test_run_default(self):
-        result = self.runner.invoke(skynetra_cli, ["run"])
-        assert result.exit_code == 0
-        assert "Running simulation for 3600.0s" in result.output
+def test_run_backpressure(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["run", "--duration", "60", "--routing", "backpressure", "--output", str(tmp_path)],
+    )
+    assert result.exit_code == 0, result.output
 
-    def test_run_with_duration(self):
-        result = self.runner.invoke(skynetra_cli, ["run", "--duration", "100.0"])
-        assert result.exit_code == 0
-        assert "Running simulation for 100.0s" in result.output
 
-    def test_run_with_short_d(self):
-        result = self.runner.invoke(skynetra_cli, ["run", "-d", "50.0"])
-        assert result.exit_code == 0
-        assert "Running simulation for 50.0s" in result.output
+def test_run_physics(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["run", "--duration", "60", "--physics", "--output", str(tmp_path)],
+    )
+    assert result.exit_code == 0, result.output
 
-    def test_validate_valid_yaml(self):
-        with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
-            yaml.dump({"foundation": {"log_level": "INFO"}}, f)
-            config_path = f.name
-        try:
-            result = self.runner.invoke(skynetra_cli, ["validate", config_path])
-            assert result.exit_code == 0
-            assert "Config is valid" in result.output
-        finally:
-            Path(config_path).unlink(missing_ok=True)
 
-    def test_validate_nonexistent_path(self):
-        result = self.runner.invoke(skynetra_cli, ["validate", "/nonexistent/config.yaml"])
-        assert result.exit_code != 0
+def test_run_with_config_file(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "cfg.yaml"
+    cfg_path.write_text("simulation:\n  duration_s: 10.0\n  seed: 1\n")
+    out_dir = tmp_path / "out"
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        ["run", "--config", str(cfg_path), "--output", str(out_dir)],
+    )
+    assert result.exit_code == 0, result.output
+    results = json.loads((out_dir / "sim_results.json").read_text())
+    assert results["duration"] == 10.0
 
-    def test_list_strategies(self):
-        result = self.runner.invoke(skynetra_cli, ["list-strategies"])
-        assert result.exit_code == 0
-        assert "shortest_path" in result.output
-        assert "backpressure" in result.output
-        assert "thermal" in result.output
-        assert "ai_training" in result.output
 
-    def test_list_strategies_with_output(self):
-        result = self.runner.invoke(skynetra_cli, ["list-strategies", "--output", "./custom"])
-        assert result.exit_code == 0
+def test_run_invalid_routing_choice(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(main, ["run", "--routing", "wormhole"])
+    assert result.exit_code == 2
 
-    def test_cli_with_config_option(self):
-        result = self.runner.invoke(skynetra_cli, ["--config", "config.yaml", "run"])
-        assert result.exit_code == 0
 
-    def test_cli_with_log_level(self):
-        result = self.runner.invoke(skynetra_cli, ["--log-level", "DEBUG", "run"])
-        assert result.exit_code == 0
+def test_gen_config(tmp_path: Path) -> None:
+    out = str(tmp_path / "orbitdc_config.yaml")
+    runner = CliRunner()
+    result = runner.invoke(main, ["gen-config", "--output", out])
+    assert result.exit_code == 0, result.output
+    cfg = load_config(out)
+    assert cfg.simulation.duration_s == 60.0
+    assert cfg.physics.thermal["enabled"] is False
 
-    def test_run_subcommand_help(self):
-        result = self.runner.invoke(skynetra_cli, ["run", "--help"])
-        assert result.exit_code == 0
-        assert "--duration" in result.output
+
+def test_gen_config_physics(tmp_path: Path) -> None:
+    out = str(tmp_path / "physics_config.yaml")
+    runner = CliRunner()
+    result = runner.invoke(main, ["gen-config", "--physics", "--output", out])
+    assert result.exit_code == 0, result.output
+    cfg = load_config(out)
+    assert cfg.physics.thermal["enabled"] is True
+    assert cfg.physics.radiation["enabled"] is True
+    assert cfg.physics.power["enabled"] is True
+
+
+def test_list_strategies() -> None:
+    runner = CliRunner()
+    result = runner.invoke(main, ["list-strategies"])
+    assert result.exit_code == 0, result.output
+    for name in (
+        "shortest_path",
+        "backpressure",
+        "thermal",
+        "radiation",
+        "power",
+        "doppler",
+        "ai_training_sync",
+        "inference_query",
+        "federated_learning",
+        "network_metrics",
+        "compute_metrics",
+        "topology_metrics",
+        "physics_metrics",
+    ):
+        assert name in result.output
+
+
+def test_compare(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(main, ["compare", "--output", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "compare_shortest_path.json").exists()
+    assert (tmp_path / "compare_backpressure.json").exists()
+    assert "shortest_path" in result.output
+    assert "backpressure" in result.output
+    assert "delivered" in result.output
+
+
+def test_sweep(tmp_path: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(main, ["sweep", "--output", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    summary = tmp_path / "summary.csv"
+    assert summary.exists()
+    rows = summary.read_text().strip().splitlines()
+    assert len(rows) == 7  # header + 3 scales x 2 pod counts
+    assert (tmp_path / "sweep_p2x3_pods1.json").exists()
