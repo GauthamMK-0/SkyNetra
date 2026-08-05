@@ -89,10 +89,16 @@ class ComputeJobCompleteEvent(SimulationEvent):
 
 @dataclass
 class PhysicsTickEvent(SimulationEvent):
-    """Published after each physics tick; carries per-node state."""
+    """Published after each physics tick; carries per-node state.
+
+    `node_state` maps node id -> {"physics_state": {...},
+    "metrics_state": {...}}; `active_models` lists the enabled physics
+    model names that produced the tick.
+    """
 
     tick: int = 0
     node_state: dict[str, dict[str, Any]] = field(default_factory=dict)
+    active_models: list[str] = field(default_factory=list)
 
 
 @dataclass

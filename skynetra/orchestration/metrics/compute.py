@@ -1,8 +1,9 @@
 """
 Orchestration layer (L3) — compute metrics collector.
 
-Sums the compute task/FLOPS/energy counters accumulated in pod nodes'
-`metrics_state` over the run.
+Event-driven: subscribes to `ComputeJobCompleteEvent` (finished on-orbit
+compute jobs) and `PacketDropEvent` (dropped compute-bound packets:
+`flops_required > 0` or a compute workload packet type).
 
 May import from: itself, orchestration, engines, domain, foundation.
 """
@@ -11,31 +12,67 @@ from __future__ import annotations
 
 from typing import Any
 
-from skynetra.orchestration.context import SimulationContext
+import pandas as pd
+
+from skynetra.domain.packets.packet import Packet
+from skynetra.foundation.eventbus import EventBus
+from skynetra.orchestration.events import (
+    ComputeJobCompleteEvent,
+    PacketDropEvent,
+)
 from skynetra.orchestration.metrics.interface import MetricsCollector
-from skynetra.orchestration.metrics.registry import STRATEGIES
+
+COMPUTE_PACKET_TYPES = {
+    "ai_training_sync",
+    "inference_query",
+    "fl_gather",
+    "fl_broadcast",
+}
+
+
+def _is_compute_packet(packet: Packet) -> bool:
+    return packet.flops_required > 0 or packet.packet_type in COMPUTE_PACKET_TYPES
 
 
 class ComputeMetricsCollector(MetricsCollector):
-    def collect(self, context: SimulationContext) -> dict[str, Any]:
-        total_tasks = 0
-        total_flops = 0.0
-        total_energy = 0.0
-        for node in context.node_registry.values():
-            if node.node_type != "pod":
-                continue
-            total_tasks += node.metrics_state["compute_tasks"]
-            total_flops += node.metrics_state["compute_flops"]
-            total_energy += node.metrics_state["energy_consumed"]
+    """Compute job completion and drop tallies from live events."""
+
+    name: str = "compute_metrics"
+
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        super().__init__(config)
+        self._jobs_completed = 0
+        self._flops_completed = 0.0
+        self._compute_drops = 0
+        self._jobs_by_pod: dict[str, int] = {}
+
+    def attach(self, event_bus: EventBus) -> None:
+        event_bus.subscribe(ComputeJobCompleteEvent, self._on_job_complete)
+        event_bus.subscribe(PacketDropEvent, self._on_drop)
+
+    def _on_job_complete(self, event: ComputeJobCompleteEvent) -> None:
+        self._jobs_completed += 1
+        self._flops_completed += float(event.packet.flops_required)
+        pod_id = str(event.node_id)
+        self._jobs_by_pod[pod_id] = self._jobs_by_pod.get(pod_id, 0) + 1
+
+    def _on_drop(self, event: PacketDropEvent) -> None:
+        if _is_compute_packet(event.packet):
+            self._compute_drops += 1
+
+    def get_summary(self) -> dict[str, Any]:
         return {
-            "total_compute_tasks": total_tasks,
-            "total_compute_flops": total_flops,
-            "total_energy_consumed": total_energy,
-            "num_pods": len(context.pod_ids),
+            "compute_jobs_completed": self._jobs_completed,
+            "compute_flops_completed": self._flops_completed,
+            "compute_drops": self._compute_drops,
+            "jobs_by_pod": dict(self._jobs_by_pod),
         }
 
-    def name(self) -> str:
-        return "compute"
+    def to_dataframe(self) -> pd.DataFrame:
+        return pd.DataFrame([self.get_summary()])
 
-
-STRATEGIES["compute"] = ComputeMetricsCollector
+    def reset(self) -> None:
+        self._jobs_completed = 0
+        self._flops_completed = 0.0
+        self._compute_drops = 0
+        self._jobs_by_pod = {}

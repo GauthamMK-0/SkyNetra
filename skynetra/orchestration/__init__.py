@@ -21,11 +21,16 @@ from skynetra.orchestration.events import (
     SimulationEvent,
     TopologyUpdateEvent,
 )
+from skynetra.orchestration.metrics.aggregator import MetricsAggregator
+from skynetra.orchestration.metrics.compute import ComputeMetricsCollector
 from skynetra.orchestration.metrics.interface import MetricsCollector
+from skynetra.orchestration.metrics.network import NetworkMetricsCollector
+from skynetra.orchestration.metrics.physics_metrics import PhysicsMetricsCollector
 from skynetra.orchestration.metrics.registry import (
-    get_metrics_collector,
-    list_metrics_collectors,
+    STRATEGIES,
+    build_metrics_collectors,
 )
+from skynetra.orchestration.metrics.topology_metrics import TopologyMetricsCollector
 from skynetra.orchestration.results import SimulationResults
 
 __all__ = [
@@ -44,6 +49,11 @@ __all__ = [
     "PhysicsInducedDropEvent",
     "EngineErrorEvent",
     "MetricsCollector",
-    "get_metrics_collector",
-    "list_metrics_collectors",
+    "NetworkMetricsCollector",
+    "ComputeMetricsCollector",
+    "TopologyMetricsCollector",
+    "PhysicsMetricsCollector",
+    "MetricsAggregator",
+    "STRATEGIES",
+    "build_metrics_collectors",
 ]

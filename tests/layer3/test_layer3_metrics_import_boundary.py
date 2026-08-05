@@ -1,0 +1,71 @@
+"""AST-based import boundary check for the Layer 3 metrics subpackage.
+
+The metrics subpackage (`skynetra.orchestration.metrics`) lives inside
+Layer 3 and may import from itself, the rest of `skynetra.orchestration`,
+and lower layers (L0 `skynetra.foundation`, L1 `skynetra.domain`, L2
+`skynetra.engines`). It must never import from Layer 4
+(`skynetra.interface`, including `skynetra.interface.config`). This is a
+static AST scan of every `.py` file under `skynetra/orchestration/metrics/`.
+
+The legacy project name was `orbitdc` with layers
+`orbitdc.layer2_engines` / `orbitdc.layer3_*` / `orbitdc.layer4_*`; any
+reference to those strings is flagged as well.
+"""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+METRICS_ROOT = (
+    Path(__file__).resolve().parent.parent.parent / "skynetra" / "orchestration" / "metrics"
+)
+
+FORBIDDEN_TOP_LEVEL_MODULES = {
+    "interface",  # skynetra.interface — Layer 4
+}
+
+FORBIDDEN_STRINGS = (
+    "orbitdc.layer4",
+    "orbitdc.layer3",
+)
+
+
+def _extract_imports(path: Path) -> list[tuple[str, int]]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    imports: list[tuple[str, int]] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.append((alias.name, node.lineno))
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.append((node.module, node.lineno))
+    return imports
+
+
+def test_layer3_metrics_files_exist() -> None:
+    assert METRICS_ROOT.is_dir()
+    assert list(METRICS_ROOT.rglob("*.py")), "skynetra/orchestration/metrics must contain modules"
+
+
+def test_layer3_metrics_has_no_upward_imports() -> None:
+    violations: list[str] = []
+    for py_file in sorted(METRICS_ROOT.rglob("*.py")):
+        for module, lineno in _extract_imports(py_file):
+            if module.split(".")[0] in FORBIDDEN_TOP_LEVEL_MODULES:
+                violations.append(
+                    f"{py_file.relative_to(METRICS_ROOT.parent.parent.parent)}:{lineno} "
+                    f"imports forbidden module '{module}'"
+                )
+    assert not violations, "\n".join(violations)
+
+
+def test_layer3_metrics_has_no_legacy_orbitdc_layer_references() -> None:
+    violations: list[str] = []
+    for py_file in sorted(METRICS_ROOT.rglob("*.py")):
+        source = py_file.read_text(encoding="utf-8")
+        for line_no, line in enumerate(source.splitlines(), start=1):
+            if any(token in line for token in FORBIDDEN_STRINGS):
+                relative = py_file.relative_to(METRICS_ROOT.parent.parent.parent)
+                violations.append(f"{relative}:{line_no}: {line}")
+    assert not violations, "\n".join(violations)

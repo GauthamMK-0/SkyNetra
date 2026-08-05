@@ -11,8 +11,7 @@ from skynetra.orchestration.metrics.network import NetworkMetricsCollector
 from skynetra.orchestration.metrics.physics_metrics import PhysicsMetricsCollector
 from skynetra.orchestration.metrics.registry import (
     STRATEGIES,
-    get_metrics_collector,
-    list_metrics_collectors,
+    build_metrics_collectors,
 )
 from skynetra.orchestration.metrics.topology_metrics import TopologyMetricsCollector
 
@@ -24,6 +23,5 @@ __all__ = [
     "PhysicsMetricsCollector",
     "MetricsAggregator",
     "STRATEGIES",
-    "get_metrics_collector",
-    "list_metrics_collectors",
+    "build_metrics_collectors",
 ]

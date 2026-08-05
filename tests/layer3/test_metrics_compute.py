@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import simpy
-
-from skynetra.domain.nodes.pod import PodNode
-from skynetra.domain.nodes.relay import RelayNode
 from skynetra.domain.packets.packet import Packet
+from skynetra.foundation.eventbus import EventBus
 from skynetra.foundation.types import NodeId
-from skynetra.orchestration.context import SimulationContext
+from skynetra.orchestration.events import (
+    ComputeJobCompleteEvent,
+    PacketDropEvent,
+)
 from skynetra.orchestration.metrics.compute import ComputeMetricsCollector
 
 
@@ -16,46 +16,147 @@ def _compute_packet(packet_id: str, flops: float = 1000.0) -> Packet:
         src=NodeId("sat-1"),
         dst=NodeId("pod-1"),
         size_bytes=200,
-        packet_type="compute",
+        packet_type="inference_query",
         created_at=0.0,
         flops_required=flops,
     )
 
 
-def _context(nodes: dict[NodeId, object]) -> SimulationContext:
-    return SimulationContext(
-        env=simpy.Environment(),
-        node_registry=nodes,  # type: ignore[arg-type]
-        pod_ids=[nid for nid, node in nodes.items() if node.node_type == "pod"],
-    )
+def _attach(bus: EventBus) -> ComputeMetricsCollector:
+    collector = ComputeMetricsCollector()
+    collector.attach(bus)
+    return collector
 
 
 class TestComputeMetricsCollector:
     def test_name(self):
-        assert ComputeMetricsCollector().name() == "compute"
+        assert ComputeMetricsCollector().name == "compute_metrics"
 
-    def test_counts_pod_compute_activity(self):
-        pod = PodNode(NodeId("pod-1"))
-        pod.process_packet(_compute_packet("p1"))
-        pod.process_compute()
-        pod.process_packet(_compute_packet("p2", flops=500.0))
-        pod.process_compute()
+    def test_starts_at_zero(self):
+        summary = _attach(EventBus()).get_summary()
+        assert summary["compute_jobs_completed"] == 0
+        assert summary["compute_flops_completed"] == 0.0
+        assert summary["compute_drops"] == 0
+        assert summary["jobs_by_pod"] == {}
 
-        metrics = ComputeMetricsCollector().collect(_context({NodeId("pod-1"): pod}))
-        assert metrics["total_compute_tasks"] == 2
-        assert metrics["total_compute_flops"] == 1500.0
-        assert metrics["total_energy_consumed"] == pod.metrics_state["energy_consumed"]
-        assert metrics["num_pods"] == 1
+    def test_accumulates_job_completions(self):
+        bus = EventBus()
+        collector = _attach(bus)
 
-    def test_ignores_non_pod_nodes(self):
-        relay = RelayNode(NodeId("sat-1"))
-        metrics = ComputeMetricsCollector().collect(_context({NodeId("sat-1"): relay}))
-        assert metrics["total_compute_tasks"] == 0
-        assert metrics["total_compute_flops"] == 0.0
-        assert metrics["num_pods"] == 0
+        bus.publish(
+            ComputeJobCompleteEvent(
+                time=1.0,
+                event_type="compute_job_complete",
+                node_id=NodeId("pod-1"),
+                packet=_compute_packet("p1", flops=1000.0),
+            )
+        )
+        bus.publish(
+            ComputeJobCompleteEvent(
+                time=2.0,
+                event_type="compute_job_complete",
+                node_id=NodeId("pod-2"),
+                packet=_compute_packet("p2", flops=500.0),
+            )
+        )
+        bus.publish(
+            ComputeJobCompleteEvent(
+                time=3.0,
+                event_type="compute_job_complete",
+                node_id=NodeId("pod-1"),
+                packet=_compute_packet("p3", flops=250.0),
+            )
+        )
 
-    def test_empty_registry(self):
-        metrics = ComputeMetricsCollector().collect(_context({}))
-        assert metrics["total_compute_tasks"] == 0
-        assert metrics["total_compute_flops"] == 0.0
-        assert metrics["num_pods"] == 0
+        summary = collector.get_summary()
+        assert summary["compute_jobs_completed"] == 3
+        assert summary["compute_flops_completed"] == 1750.0
+        assert summary["jobs_by_pod"] == {"pod-1": 2, "pod-2": 1}
+
+    def test_counts_compute_packet_drops(self):
+        bus = EventBus()
+        collector = _attach(bus)
+
+        bus.publish(
+            PacketDropEvent(
+                time=1.0,
+                event_type="packet_drop",
+                packet=_compute_packet("p1"),
+                node_id=NodeId("sat-1"),
+                reason="no_route",
+            )
+        )
+        assert collector.get_summary()["compute_drops"] == 1
+
+    def test_ignores_non_compute_drops(self):
+        bus = EventBus()
+        collector = _attach(bus)
+
+        data_packet = _compute_packet("p1")
+        data_packet.flops_required = 0.0
+        data_packet.packet_type = "telemetry"
+        bus.publish(
+            PacketDropEvent(
+                time=1.0,
+                event_type="packet_drop",
+                packet=data_packet,
+                node_id=NodeId("sat-1"),
+                reason="no_route",
+            )
+        )
+        assert collector.get_summary()["compute_drops"] == 0
+
+    def test_flops_based_compute_drop_detection(self):
+        bus = EventBus()
+        collector = _attach(bus)
+
+        packet = Packet(
+            packet_id="p9",
+            src=NodeId("a"),
+            dst=NodeId("pod-1"),
+            size_bytes=100,
+            packet_type="mystery",
+            created_at=0.0,
+            flops_required=5000.0,
+        )
+        bus.publish(
+            PacketDropEvent(
+                time=1.0,
+                event_type="packet_drop",
+                packet=packet,
+                node_id=NodeId("sat-1"),
+                reason="no_route",
+            )
+        )
+        assert collector.get_summary()["compute_drops"] == 1
+
+    def test_reset_clears_tallies(self):
+        bus = EventBus()
+        collector = _attach(bus)
+        bus.publish(
+            ComputeJobCompleteEvent(
+                time=1.0,
+                event_type="compute_job_complete",
+                node_id=NodeId("pod-1"),
+                packet=_compute_packet("p1"),
+            )
+        )
+
+        collector.reset()
+        summary = collector.get_summary()
+        assert summary["compute_jobs_completed"] == 0
+        assert summary["compute_flops_completed"] == 0.0
+        assert summary["jobs_by_pod"] == {}
+
+    def test_to_dataframe(self):
+        import pandas as pd
+
+        df = ComputeMetricsCollector().to_dataframe()
+        assert isinstance(df, pd.DataFrame)
+        assert list(df.columns) == [
+            "compute_jobs_completed",
+            "compute_flops_completed",
+            "compute_drops",
+            "jobs_by_pod",
+        ]
+        assert len(df) == 1

@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 import pytest
-import simpy
 
-from skynetra.domain.nodes.base import Node
-from skynetra.domain.nodes.relay import RelayNode
 from skynetra.domain.packets.packet import Packet
 from skynetra.foundation.eventbus import EventBus
 from skynetra.foundation.types import NodeId
-from skynetra.orchestration.context import SimulationContext
 from skynetra.orchestration.events import (
     PacketDeliveredEvent,
     PacketDropEvent,
+    PacketTransmitEvent,
     PhysicsInducedDropEvent,
 )
 from skynetra.orchestration.metrics.network import NetworkMetricsCollector
@@ -28,39 +25,83 @@ def _packet(packet_id: str) -> Packet:
     )
 
 
-def _context(nodes: dict[NodeId, Node]) -> SimulationContext:
-    return SimulationContext(env=simpy.Environment(), node_registry=nodes)
+def _attach(bus: EventBus) -> NetworkMetricsCollector:
+    collector = NetworkMetricsCollector()
+    collector.attach(bus)
+    return collector
 
 
 class TestNetworkMetricsCollector:
     def test_name(self):
-        assert NetworkMetricsCollector().name() == "network"
+        assert NetworkMetricsCollector().name == "network_metrics"
 
-    def test_counts_node_metrics_state(self):
-        node = RelayNode(NodeId("sat-1"))
-        node.process_packet(_packet("p1"))
-        node.forward_packet()
-        node.forward_packet()
-        context = _context({NodeId("sat-1"): node})
+    def test_starts_at_zero(self):
+        summary = _attach(EventBus()).get_summary()
+        assert summary["delivered"] == 0
+        assert summary["dropped"] == 0
+        assert summary["transmitted"] == 0
+        assert summary["avg_latency_s"] == 0.0
+        assert summary["drop_rate"] == 0.0
 
-        metrics = NetworkMetricsCollector().collect(context)
-        assert (
-            metrics["total_packets"]
-            == node.metrics_state["packets_sent"] + node.metrics_state["packets_received"]
+    def test_accumulates_delivered_dropped_transmitted(self):
+        bus = EventBus()
+        collector = _attach(bus)
+
+        bus.publish(
+            PacketTransmitEvent(
+                time=1.0,
+                event_type="packet_transmit",
+                packet=_packet("p1"),
+                node_id=NodeId("a"),
+                to_node=NodeId("b"),
+            )
+        )
+        bus.publish(
+            PacketTransmitEvent(
+                time=2.0,
+                event_type="packet_transmit",
+                packet=_packet("p2"),
+                node_id=NodeId("a"),
+                to_node=NodeId("b"),
+            )
+        )
+        bus.publish(
+            PacketDeliveredEvent(
+                time=3.0,
+                event_type="packet_delivered",
+                packet=_packet("p1"),
+                node_id=NodeId("b"),
+                latency_s=0.5,
+            )
+        )
+        bus.publish(
+            PacketDropEvent(
+                time=4.0,
+                event_type="packet_drop",
+                packet=_packet("p2"),
+                node_id=NodeId("a"),
+                reason="no_route",
+            )
         )
 
-    def test_tallies_delivered_and_dropped_via_events(self):
+        summary = collector.get_summary()
+        assert summary["delivered"] == 1
+        assert summary["dropped"] == 1
+        assert summary["transmitted"] == 2
+        assert summary["avg_latency_s"] == 0.5
+        assert summary["drop_rate"] == 0.5
+
+    def test_average_latency_over_multiple_deliveries(self):
         bus = EventBus()
-        collector = NetworkMetricsCollector()
-        collector.attach(bus)
+        collector = _attach(bus)
 
         bus.publish(
             PacketDeliveredEvent(
                 time=1.0,
                 event_type="packet_delivered",
                 packet=_packet("p1"),
-                node_id=NodeId("gs-1"),
-                latency_s=0.5,
+                node_id=NodeId("b"),
+                latency_s=0.2,
             )
         )
         bus.publish(
@@ -68,28 +109,18 @@ class TestNetworkMetricsCollector:
                 time=2.0,
                 event_type="packet_delivered",
                 packet=_packet("p2"),
-                node_id=NodeId("gs-1"),
-                latency_s=0.25,
+                node_id=NodeId("b"),
+                latency_s=0.4,
             )
         )
-        bus.publish(
-            PacketDropEvent(
-                time=3.0,
-                event_type="packet_drop",
-                packet=_packet("p3"),
-                node_id=NodeId("sat-1"),
-                reason="no_route",
-            )
-        )
-        metrics = collector.collect(_context({}))
-        assert metrics["delivered"] == 2
-        assert metrics["dropped"] == 1
-        assert metrics["avg_latency_s"] == pytest.approx(0.375)
+
+        summary = collector.get_summary()
+        assert summary["delivered"] == 2
+        assert summary["avg_latency_s"] == pytest.approx(0.3)
 
     def test_physics_induced_drop_counts_as_drop(self):
         bus = EventBus()
-        collector = NetworkMetricsCollector()
-        collector.attach(bus)
+        collector = _attach(bus)
 
         bus.publish(
             PhysicsInducedDropEvent(
@@ -101,10 +132,46 @@ class TestNetworkMetricsCollector:
                 cause="node_faulted",
             )
         )
-        metrics = collector.collect(_context({}))
-        assert metrics["delivered"] == 0
-        assert metrics["dropped"] == 1
+        assert collector.get_summary()["dropped"] == 1
 
-    def test_avg_latency_zero_without_deliveries(self):
-        metrics = NetworkMetricsCollector().collect(_context({}))
-        assert metrics["avg_latency_s"] == 0.0
+    def test_reset_clears_tallies(self):
+        bus = EventBus()
+        collector = _attach(bus)
+        bus.publish(
+            PacketDeliveredEvent(
+                time=1.0,
+                event_type="packet_delivered",
+                packet=_packet("p1"),
+                node_id=NodeId("b"),
+                latency_s=0.5,
+            )
+        )
+        bus.publish(
+            PacketDropEvent(
+                time=2.0,
+                event_type="packet_drop",
+                packet=_packet("p2"),
+                node_id=NodeId("a"),
+                reason="no_route",
+            )
+        )
+
+        collector.reset()
+        summary = collector.get_summary()
+        assert summary["delivered"] == 0
+        assert summary["dropped"] == 0
+        assert summary["transmitted"] == 0
+
+    def test_to_dataframe(self):
+        import pandas as pd
+
+        df = NetworkMetricsCollector().to_dataframe()
+        assert isinstance(df, pd.DataFrame)
+        assert list(df.columns) == [
+            "delivered",
+            "dropped",
+            "transmitted",
+            "avg_latency_s",
+            "drop_rate",
+        ]
+        assert len(df) == 1

@@ -66,7 +66,7 @@ from skynetra.orchestration.events import (
 from skynetra.orchestration.metrics.aggregator import MetricsAggregator
 from skynetra.orchestration.metrics.interface import MetricsCollector
 from skynetra.orchestration.metrics.network import NetworkMetricsCollector
-from skynetra.orchestration.metrics.registry import get_metrics_collector
+from skynetra.orchestration.metrics.registry import build_metrics_collectors
 from skynetra.orchestration.results import SimulationResults
 
 MAX_FORWARD_HOPS = 64
@@ -143,14 +143,7 @@ class OrbitDCSimulation:
         for i in range(1, spec.n_ground_stations + 1):
             node_registry[NodeId(f"gs-{i}")] = GroundStationNode(NodeId(f"gs-{i}"))
 
-        collectors = (
-            [
-                get_metrics_collector(entry["name"], **entry.get("config", {}))
-                for entry in spec.metrics_specs
-            ]
-            if spec.metrics_specs
-            else []
-        )
+        collectors = build_metrics_collectors(spec.metrics_specs) if spec.metrics_specs else []
 
         return cls(
             constellation=spec.constellation,
@@ -198,7 +191,7 @@ class OrbitDCSimulation:
         collectors: list[MetricsCollector] | None,
     ) -> list[MetricsCollector]:
         resolved = list(collectors) if collectors is not None else []
-        if not any(c.name() == "network" for c in resolved):
+        if not any(c.name == "network_metrics" for c in resolved):
             resolved.append(NetworkMetricsCollector())
         return resolved
 
@@ -215,11 +208,7 @@ class OrbitDCSimulation:
         event_bus = EventBus()
         graph = self._build_graph(self._node_registry, time_s=0.0)
         self._routing_engine.update_topology(graph)
-
-        for collector in self._metrics_collectors:
-            attach = getattr(collector, "attach", None)
-            if attach is not None:
-                attach(event_bus)
+        aggregator = MetricsAggregator(self._metrics_collectors, event_bus)
 
         pod_ids = [nid for nid, node in self._node_registry.items() if node.node_type == "pod"]
         ground_station_ids = [
@@ -233,7 +222,7 @@ class OrbitDCSimulation:
             graph=graph,
             routing_engine=self._routing_engine,
             physics_orchestrator=self._physics_orchestrator,
-            metrics_aggregator=MetricsAggregator(self._metrics_collectors),
+            metrics_aggregator=aggregator,
             sim_duration_s=self._sim_duration_s,
             topology_update_interval_s=self._topology_update_interval_s,
             physics_tick_interval_s=self._physics_tick_interval_s,
@@ -268,9 +257,8 @@ class OrbitDCSimulation:
         context.current_time_s = context.sim_duration_s
         context.scratchpad["topology_version"] = context.topology_version
 
-        engine_metrics = (
-            context.metrics_aggregator.collect(context) if context.metrics_aggregator else {}
-        )
+        aggregator = context.metrics_aggregator
+        engine_metrics = aggregator.get_all_summaries() if aggregator is not None else {}
         return SimulationResults(
             engine_metrics=engine_metrics,
             events=list(self._event_log),
@@ -394,11 +382,7 @@ class OrbitDCSimulation:
             context.current_time_s = env.now
             tick += 1
             orchestrator = context.physics_orchestrator
-            if (
-                orchestrator is None
-                or context.propagator is None
-                or context.constellation is None
-            ):
+            if orchestrator is None or context.propagator is None or context.constellation is None:
                 continue
             positions = context.propagator.get_positions(env.now, context.constellation)
             try:
@@ -429,6 +413,7 @@ class OrbitDCSimulation:
                 if context.graph.has_edge(node_a, node_b):
                     context.graph.edges[node_a, node_b].update(attrs)
             context.combined_weight_overrides = result["weight_overrides"]
+            active_models = [model.__class__.__name__ for model in orchestrator.models]
             self._publish(
                 context,
                 PhysicsTickEvent(
@@ -436,8 +421,13 @@ class OrbitDCSimulation:
                     event_type="physics_tick",
                     tick=tick,
                     node_state={
-                        nid: dict(node.physics_state) for nid, node in context.node_registry.items()
+                        nid: {
+                            "physics_state": dict(node.physics_state),
+                            "metrics_state": dict(node.metrics_state),
+                        }
+                        for nid, node in context.node_registry.items()
                     },
+                    active_models=active_models,
                 ),
             )
 
@@ -446,7 +436,7 @@ class OrbitDCSimulation:
         while True:
             yield env.timeout(METRICS_SNAPSHOT_INTERVAL_S)
             aggregator = context.metrics_aggregator
-            metrics = aggregator.collect(context) if aggregator is not None else {}
+            metrics = aggregator.get_all_summaries() if aggregator is not None else {}
             snapshots = context.scratchpad.setdefault("metrics_snapshots", [])
             snapshots.append({"time": env.now, "metrics": metrics})
 

@@ -63,7 +63,7 @@ class TestRun:
 
         assert isinstance(results, SimulationResults)
         assert results.duration == 60.0
-        network = results.engine_metrics["network"]
+        network = results.engine_metrics["network_metrics"]
         assert network["delivered"] > 0
         assert network["dropped"] == 0
         assert any(ev.event_type == "packet_delivered" for ev in results.events)
@@ -75,7 +75,7 @@ class TestRun:
             metrics_collectors=None,
         )
         results = sim.run()
-        assert "network" in results.engine_metrics
+        assert "network_metrics" in results.engine_metrics
 
     def test_backpressure_router_runs_without_crash(self):
         sim = OrbitDCSimulation.from_layers(
@@ -89,7 +89,7 @@ class TestRun:
 
         assert isinstance(results, SimulationResults)
         assert results.duration == 30.0
-        assert "network" in results.engine_metrics
+        assert "network_metrics" in results.engine_metrics
         assert not [ev for ev in results.events if ev.event_type == "engine_error"]
 
     def test_thermal_and_radiation_physics_run(self):
@@ -125,7 +125,7 @@ class TestRun:
         )
         results = sim.run()
 
-        physics_metrics = results.engine_metrics["physics"]
+        physics_metrics = results.engine_metrics["physics_metrics"]
         assert set(physics_metrics["active_models"]) == {
             "ThermalModel",
             "RadiationModel",
@@ -148,10 +148,10 @@ class TestRun:
                 }
             ],
             metrics_specs=[
-                {"name": "network"},
-                {"name": "physics"},
-                {"name": "compute"},
-                {"name": "topology"},
+                {"name": "network_metrics"},
+                {"name": "physics_metrics"},
+                {"name": "compute_metrics"},
+                {"name": "topology_metrics"},
             ],
             sim_duration_s=30.0,
         )
@@ -159,11 +159,11 @@ class TestRun:
         results = sim.run()
 
         assert isinstance(results, SimulationResults)
-        assert "network" in results.engine_metrics
-        assert "physics" in results.engine_metrics
-        assert "compute" in results.engine_metrics
-        assert "topology" in results.engine_metrics
-        assert results.engine_metrics["network"]["delivered"] > 0
+        assert "network_metrics" in results.engine_metrics
+        assert "physics_metrics" in results.engine_metrics
+        assert "compute_metrics" in results.engine_metrics
+        assert "topology_metrics" in results.engine_metrics
+        assert results.engine_metrics["network_metrics"]["delivered"] > 0
 
     def test_results_to_dict_and_compare(self):
         first = _shortest_path_sim(
@@ -222,4 +222,7 @@ class TestSetup:
         results = sim.run()
         physics_events = [ev for ev in results.events if isinstance(ev, PhysicsTickEvent)]
         assert len(physics_events) == 4  # t=1..4
-        assert "temperature_k" in next(iter(physics_events[0].node_state.values()))
+        sample = next(iter(physics_events[0].node_state.values()))
+        assert "temperature_k" in sample["physics_state"]
+        assert "energy_consumed" in sample["metrics_state"]
+        assert physics_events[0].active_models == ["ThermalModel"]
