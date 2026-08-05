@@ -26,6 +26,13 @@ output/
 *.png
 *.pdf
 
+# Build artifacts (mkdocs site output)
+site/
+
+# Regenerable run artifacts
+results/compare/
+results/sim_results.json
+
 # Secrets
 .env
 .env.*
@@ -33,6 +40,8 @@ output/
 
 # Personal session context (not shared)
 SESSION_HISTORY.md
+IMPLEMENTATION.md
+implementation.md
 
 # OS
 .DS_Store
