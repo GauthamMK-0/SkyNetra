@@ -109,5 +109,7 @@ def config_to_simulation_spec(
         sim_duration_s=config.simulation.duration_s,
         topology_update_interval_s=config.simulation.topology_update_interval_s,
         physics_tick_interval_s=config.simulation.physics_tick_interval_s,
+        isl_capacity_gbps=config.network.isl_capacity_gbps,
+        gsl_capacity_gbps=config.network.gsl_capacity_gbps,
         seed=config.simulation.seed,
     )

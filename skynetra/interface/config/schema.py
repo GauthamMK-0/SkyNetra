@@ -38,6 +38,11 @@ class GroundStationConfig(BaseModel):
     n_ground_stations: int = 1
 
 
+class NetworkConfig(BaseModel):
+    isl_capacity_gbps: float = 100.0
+    gsl_capacity_gbps: float = 10.0
+
+
 class RoutingConfig(BaseModel):
     strategy: Literal["shortest_path", "backpressure"] = "shortest_path"
     config: dict[str, Any] = {}
@@ -81,6 +86,7 @@ class FullConfig(BaseModel):
     constellation: ConstellationConfigModel = ConstellationConfigModel()
     pods: PodConfig = PodConfig()
     ground_stations: GroundStationConfig = GroundStationConfig()
+    network: NetworkConfig = NetworkConfig()
     routing: RoutingConfig = RoutingConfig()
     physics: PhysicsConfig = PhysicsConfig()
     workload: WorkloadConfig = WorkloadConfig()

@@ -97,7 +97,7 @@ class TestEdgeSchema:
     def test_edge_schema_defaults(self):
         graph = _build()
         attrs = graph.edges[NodeId("sat-0-0"), NodeId("sat-0-1")]
-        assert attrs["capacity"] == 10.0
+        assert attrs["capacity"] == 100.0
         assert attrs["propagation_delay_ms"] == pytest.approx(_delay_ms(100.0))
         assert attrs["thermal_noise_factor"] == 1.0
         assert attrs["radiation_bit_error_rate"] == 0.0
@@ -107,7 +107,14 @@ class TestEdgeSchema:
     def test_capacity_param(self):
         graph = _build(link_capacity_gbps=25.0)
         assert graph.edges[NodeId("sat-0-0"), NodeId("sat-0-1")]["capacity"] == 25.0
-        assert graph.edges[NodeId("sat-0-0"), NodeId("gs-1")]["capacity"] == 25.0
+        # GS edges use the GSL capacity class, independent of the ISL capacity.
+        assert graph.edges[NodeId("sat-0-0"), NodeId("gs-1")]["capacity"] == 10.0
+
+    def test_gsl_capacity_param(self):
+        graph = _build(link_capacity_gbps=25.0, gsl_capacity_gbps=7.0)
+        assert graph.edges[NodeId("sat-0-0"), NodeId("sat-0-1")]["capacity"] == 25.0
+        assert graph.edges[NodeId("sat-0-0"), NodeId("gs-1")]["capacity"] == 7.0
+        assert graph.edges[NodeId("gs-1"), NodeId("sat-0-0")]["capacity"] == 7.0
 
     def test_gsl_edge_schema(self):
         graph = _build()

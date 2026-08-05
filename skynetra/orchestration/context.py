@@ -58,5 +58,6 @@ class SimulationContext:
     current_time_s: float = 0.0
     topology_version: int = 0
     combined_weight_overrides: dict[LinkId, float] = field(default_factory=dict)
+    link_resources: dict[LinkId, simpy.PriorityResource] = field(default_factory=dict)
     debug_routing: bool = False
     scratchpad: dict[str, Any] = field(default_factory=dict)

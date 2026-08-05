@@ -42,7 +42,8 @@ from skynetra.domain.topology.isl import (
 )
 from skynetra.foundation.types import LinkId, NodeId, Vector3
 
-DEFAULT_CAPACITY_GBPS = 10.0
+DEFAULT_CAPACITY_GBPS = 100.0
+DEFAULT_GSL_CAPACITY_GBPS = 10.0
 DEFAULT_GSL_ELEVATION_MIN_DEG = 10.0
 
 DEFAULT_NODE_ATTRIBUTES: dict[str, float] = {
@@ -87,6 +88,7 @@ def build_topology_graph(
     pod_ids: list[NodeId],
     ground_stations: dict[NodeId, Vector3],
     link_capacity_gbps: float = DEFAULT_CAPACITY_GBPS,
+    gsl_capacity_gbps: float = DEFAULT_GSL_CAPACITY_GBPS,
     gsl_elevation_min_deg: float = DEFAULT_GSL_ELEVATION_MIN_DEG,
     link_quality_overrides: dict[LinkId, dict[str, Any]] | None = None,
 ) -> nx.DiGraph:
@@ -98,7 +100,9 @@ def build_topology_graph(
             link; each pair is added in both directions.
         pod_ids: Compute-pod node ids to include in the graph.
         ground_stations: Ground station ids mapped to ECI positions (km).
-        link_capacity_gbps: Nominal link capacity for every edge, Gbps.
+        link_capacity_gbps: Nominal ISL capacity for every edge, Gbps.
+        gsl_capacity_gbps: Nominal ground-station access link capacity,
+            Gbps. Pod attachment links use this class too.
         gsl_elevation_min_deg: Minimum elevation (deg) for a satellite
             <-> ground station edge to exist.
         link_quality_overrides: Optional per-`LinkId` attribute dicts
@@ -144,12 +148,12 @@ def build_topology_graph(
             graph.add_edge(
                 sat_id,
                 gs_id,
-                **_default_edge_attributes(sat_pos, gs_pos, link_capacity_gbps),
+                **_default_edge_attributes(sat_pos, gs_pos, gsl_capacity_gbps),
             )
             graph.add_edge(
                 gs_id,
                 sat_id,
-                **_default_edge_attributes(gs_pos, sat_pos, link_capacity_gbps),
+                **_default_edge_attributes(gs_pos, sat_pos, gsl_capacity_gbps),
             )
 
     if link_quality_overrides:

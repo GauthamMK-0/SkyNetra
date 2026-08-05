@@ -48,7 +48,7 @@ from skynetra.engines.routing.registry import get_routing_engine
 from skynetra.engines.workload.interface import WorkloadGenerator
 from skynetra.engines.workload.registry import build_workloads
 from skynetra.foundation.eventbus import EventBus
-from skynetra.foundation.types import NodeId, Vector3
+from skynetra.foundation.types import LinkId, NodeId, Vector3
 from skynetra.orchestration.context import SimulationContext
 from skynetra.orchestration.events import (
     ComputeJobCompleteEvent,
@@ -95,6 +95,8 @@ class SkyNetraSimulation:
         sim_duration_s: float = 60.0
         topology_update_interval_s: float = 10.0
         physics_tick_interval_s: float = 1.0
+        isl_capacity_gbps: float = 100.0
+        gsl_capacity_gbps: float = 10.0
         seed: int = 42
 
     def __init__(
@@ -108,6 +110,8 @@ class SkyNetraSimulation:
         sim_duration_s: float = 60.0,
         topology_update_interval_s: float = 10.0,
         physics_tick_interval_s: float = 1.0,
+        isl_capacity_gbps: float = 100.0,
+        gsl_capacity_gbps: float = 10.0,
         seed: int = 42,
         debug_routing: bool = False,
     ) -> None:
@@ -121,6 +125,8 @@ class SkyNetraSimulation:
         self._sim_duration_s = sim_duration_s
         self._topology_update_interval_s = topology_update_interval_s
         self._physics_tick_interval_s = physics_tick_interval_s
+        self._isl_capacity_gbps = isl_capacity_gbps
+        self._gsl_capacity_gbps = gsl_capacity_gbps
         self._seed = seed
         self._debug_routing = debug_routing
         self._context: SimulationContext | None = None
@@ -155,6 +161,8 @@ class SkyNetraSimulation:
             sim_duration_s=spec.sim_duration_s,
             topology_update_interval_s=spec.topology_update_interval_s,
             physics_tick_interval_s=spec.physics_tick_interval_s,
+            isl_capacity_gbps=spec.isl_capacity_gbps,
+            gsl_capacity_gbps=spec.gsl_capacity_gbps,
             seed=spec.seed,
         )
 
@@ -170,6 +178,8 @@ class SkyNetraSimulation:
         sim_duration_s: float = 60.0,
         topology_update_interval_s: float = 10.0,
         physics_tick_interval_s: float = 1.0,
+        isl_capacity_gbps: float = 100.0,
+        gsl_capacity_gbps: float = 10.0,
         seed: int = 42,
     ) -> OrbitDCSimulation:
         """Build a simulation from caller-provided Layer 1/2 objects."""
@@ -183,6 +193,8 @@ class SkyNetraSimulation:
             sim_duration_s=sim_duration_s,
             topology_update_interval_s=topology_update_interval_s,
             physics_tick_interval_s=physics_tick_interval_s,
+            isl_capacity_gbps=isl_capacity_gbps,
+            gsl_capacity_gbps=gsl_capacity_gbps,
             seed=seed,
         )
 
@@ -290,8 +302,16 @@ class SkyNetraSimulation:
             isl_links=self._isl_links(sat_ids, self._constellation),
             pod_ids=pod_ids,
             ground_stations=gs_positions,
+            link_capacity_gbps=self._isl_capacity_gbps,
+            gsl_capacity_gbps=self._gsl_capacity_gbps,
         )
-        self._attach_pod_edges(graph, pod_ids, sat_positions, gs_positions)
+        self._attach_pod_edges(
+            graph,
+            pod_ids,
+            sat_positions,
+            gs_positions,
+            capacity_gbps=self._gsl_capacity_gbps,
+        )
         return graph
 
     @staticmethod
@@ -335,6 +355,7 @@ class SkyNetraSimulation:
         sat_positions: dict[NodeId, Vector3],
         gs_positions: dict[NodeId, Vector3],
         nearest: int = POD_ATTACH_NEAREST_SATS,
+        capacity_gbps: float = 10.0,
     ) -> None:
         """Attach each pod to its `nearest` satellites (pods have no
         incident edges in the Layer 1 graph builder)."""
@@ -347,6 +368,7 @@ class SkyNetraSimulation:
             for sat_id, sat_pos in ranked[:nearest]:
                 distance_km = math.dist(pod_pos, sat_pos)
                 quality = compute_isl_link_quality(pod_pos, sat_pos, distance_km)
+                quality["capacity"] = capacity_gbps
                 graph.add_edge(pod_id, sat_id, **quality)
                 graph.add_edge(sat_id, pod_id, **quality)
 
@@ -536,6 +558,13 @@ class SkyNetraSimulation:
                 self._drop(context, packet, current_node_id, "no_route")
                 return
 
+            dequeue = getattr(current, "forward_packet", None)
+            if dequeue is not None:
+                dequeued = dequeue()
+                if dequeued is None:
+                    self._drop(context, packet, current_node_id, "queue_empty")
+                    return
+
             self._publish(
                 context,
                 PacketTransmitEvent(
@@ -546,11 +575,29 @@ class SkyNetraSimulation:
                     to_node=next_hop,
                 ),
             )
+
+            link_id = LinkId(f"{current_node_id}->{next_hop}")
+            link_resource = context.link_resources.get(link_id)
+            if link_resource is None:
+                link_resource = simpy.PriorityResource(env)
+                context.link_resources[link_id] = link_resource
+
+            edge_attrs = context.graph.edges[current_node_id, next_hop]
+            capacity_gbps = float(edge_attrs.get("capacity", 100.0))
+            capacity_fraction = float(
+                edge_attrs.get("effective_capacity_fraction", 1.0)
+            )
+
+            request = link_resource.request(priority=packet.priority)
+            yield request
+            transmission_s = packet.size_bytes * 8.0 / (
+                max(capacity_gbps, 1e-9) * max(capacity_fraction, 1e-9) * 1e9
+            )
+            yield env.timeout(transmission_s)
+            link_resource.release(request)
+
             delay_s = (
-                float(
-                    context.graph.edges[current_node_id, next_hop].get("propagation_delay_ms", 1.0)
-                )
-                / 1000.0
+                float(edge_attrs.get("propagation_delay_ms", 1.0)) / 1000.0
             )
             yield env.timeout(delay_s)
 
