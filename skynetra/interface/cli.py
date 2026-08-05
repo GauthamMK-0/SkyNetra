@@ -173,7 +173,7 @@ def sweep(config: Optional[str], output: str, physics: bool) -> None:
 
 @main.command()
 @click.option("--physics/--no-physics", default=False, help="Enable physics models")
-@click.option("--output", "-o", default="orbitdc_config.yaml", help="Output config path")
+@click.option("--output", "-o", default="skynetra_config.yaml", help="Output config path")
 def gen_config(physics: bool, output: str) -> None:
     """Generate a config YAML file"""
     cfg = get_physics_enabled_config() if physics else FullConfig()

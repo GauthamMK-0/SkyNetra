@@ -6,7 +6,7 @@ SIM_DURATION and aggregates mean +/- std.
 Each config is expressed as a Layer 4 `FullConfig`, translated with
 `config_to_simulation_spec`, and executed via
 `OrbitDCSimulation.from_spec(spec).run()` — the L4 -> L3 -> L2/L1/L0
-path end to end, exactly as the `orbitdc run` CLI does.
+path end to end, exactly as the `skynetra run` CLI does.
 
 Outputs under results/:
     scaling_sweep_results.csv      one row per config (mean/std per metric)
