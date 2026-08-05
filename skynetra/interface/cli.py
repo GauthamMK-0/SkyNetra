@@ -1,5 +1,5 @@
 """
-Interface layer (L4) — OrbitDC Click CLI.
+Interface layer (L4) — SkyNetra Click CLI.
 
 Explicit command set (no auto-discovery): run, sweep, gen-config,
 list-strategies, compare.
@@ -82,7 +82,7 @@ def _echo_summary(results: Any) -> None:
 
 @click.group()
 def main() -> None:
-    """OrbitDC: Space Data Center Network Simulator"""
+    """SkyNetra: Space Data Center Network Simulator"""
     configure_logging(level="INFO")
 
 

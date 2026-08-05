@@ -74,7 +74,7 @@ METRICS_SNAPSHOT_INTERVAL_S = 1.0
 POD_ATTACH_NEAREST_SATS = 2
 
 
-class OrbitDCSimulation:
+class SkyNetraSimulation:
     """SimPy-based orchestration core for a low-Earth-orbit data center.
 
     Construct via `from_spec` (everything derived from a spec) or
@@ -650,3 +650,6 @@ class OrbitDCSimulation:
     def _publish(self, context: SimulationContext, event: SimulationEvent) -> None:
         context.event_bus.publish(event)
         self._event_log.append(event)
+
+
+OrbitDCSimulation = SkyNetraSimulation

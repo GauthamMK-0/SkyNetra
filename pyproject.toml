@@ -48,7 +48,7 @@ dev = [
 ]
 
 [project.scripts]
-orbitdc = "skynetra.interface.cli:main"
+skynetra = "skynetra.interface.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["skynetra*"]
