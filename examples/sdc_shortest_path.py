@@ -1,73 +1,39 @@
+"""
+SDC scenario with shortest-path routing, full physics, and mixed
+workloads — expressed end to end as a Layer 4 `FullConfig`.
+
+Run:  python examples/sdc_shortest_path.py
+"""
+
 from __future__ import annotations
 
-from typing import Dict, List
-
-from skynetra.domain.nodes import GroundStation, PhysicsState, PodNode, RelayNode
-from skynetra.engines.physics import PhysicsOrchestrator, RadiationModel, ThermalModel
-from skynetra.engines.routing import ShortestPathRouter
-from skynetra.engines.workload import AITrainingWorkload, WorkloadProfile
-from skynetra.foundation.types import NodeId
-from skynetra.orchestration.engine import SkyNetraSimulation
-from skynetra.orchestration.metrics import (
-    ComputeMetricsCollector,
-    NetworkMetricsCollector,
-    PhysicsMetricsCollector,
-    TopologyMetricsCollector,
-)
+from skynetra.interface.config.defaults import FullConfig, config_to_simulation_spec
+from skynetra.orchestration.engine import OrbitDCSimulation
 
 
 def main() -> None:
-    nodes: Dict[NodeId, RelayNode | PodNode | GroundStation] = {
-        NodeId("relay-1"): RelayNode(NodeId("relay-1")),
-        NodeId("relay-2"): RelayNode(NodeId("relay-2")),
-        NodeId("pod-1"): PodNode(NodeId("pod-1"), flops=2e12, memory_gb=32.0),
-        NodeId("pod-2"): PodNode(NodeId("pod-2"), flops=4e12, memory_gb=64.0),
-        NodeId("gs-1"): GroundStation(NodeId("gs-1")),
-    }
-
-    for node in nodes.values():
-        node.physics = PhysicsState(
-            temperature=290.0,
-            radiation_dose=0.0,
-            power_available=500.0,
-            power_consumed=100.0,
-        )
-
-    router = ShortestPathRouter()
-    physics_models: List = [
-        ThermalModel(albedo=0.3, emissivity=0.8),
-        RadiationModel(background_dose_rate=0.01),
-    ]
-    orchestrator = PhysicsOrchestrator(physics_models)
-
-    profile = WorkloadProfile(
-        name="sdc-training",
-        packet_size_bytes=1500,
-        generation_rate=2.0,
-        ttl=64,
-    )
-    workload = AITrainingWorkload(profile)
-
-    collectors = [
-        NetworkMetricsCollector(),
-        TopologyMetricsCollector(),
-        PhysicsMetricsCollector(),
-        ComputeMetricsCollector(),
-    ]
-
-    sim = SkyNetraSimulation(
-        nodes=nodes,
-        routing_engine=router,
-        physics_orchestrator=orchestrator,
-        workload_generators=[workload],
-        metrics_collectors=collectors,
-        dt=1.0,
+    config = FullConfig(
+        simulation={"duration_s": 120.0, "seed": 42},
+        constellation={"n_planes": 3, "sats_per_plane": 6},
+        pods={"n_pods": 4},
+        ground_stations={"n_ground_stations": 1, "gsl_elevation_min_deg": 10.0},
+        network={"isl_capacity_gbps": 100.0, "gsl_capacity_gbps": 10.0},
+        routing={"strategy": "shortest_path"},
+        physics={"thermal": {"enabled": True}, "radiation": {"enabled": True}},
+        workload={
+            "active": ["ai_training_sync", "inference_query"],
+            "ai_training_sync": {"sync_interval_s": 10.0, "sync_size_bytes": 500_000_000},
+            "inference_query": {"arrival_rate_rps": 5.0},
+        },
+        metrics={"active": [
+            "network_metrics", "compute_metrics", "topology_metrics", "physics_metrics",
+        ]},
     )
 
-    results = sim.run(duration=100.0)
+    results = OrbitDCSimulation.from_spec(config_to_simulation_spec(config)).run()
 
     print(f"SDC Shortest-Path simulation: {results.duration}s")
-    for name, data in results.metrics.items():
+    for name, data in results.engine_metrics.items():
         print(f"  {name}: {data}")
 
 

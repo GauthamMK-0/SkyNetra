@@ -84,6 +84,42 @@ class BackPressureRouter(RoutingEngine):
         if not candidates:
             return None
 
+        if packet.dst in candidates:
+            return packet.dst
+
+        # Greedy per-hop decisions oscillate on ties and can route into
+        # dead-ends (e.g. a ground station whose only edge points back)
+        # or around closed rings when loads are static.
+        # 1) only consider successors from which the destination is
+        #    reachable;
+        # 2) prefer nodes this packet has not visited yet (cycle
+        #    breaker, backed by the L3-maintained path_history);
+        # 3) refuse the immediate U-turn (the node we just came from);
+        # 4) never pick a pod that is not the destination (L3 forbids
+        #    pod transit) — all while alternatives exist.
+        reachable = [
+            c for c in candidates if self._reaches(decision_graph, c, packet.dst)
+        ]
+        if reachable:
+            candidates = reachable
+        if packet.dst not in candidates:
+            non_pods = [
+                c
+                for c in candidates
+                if node_registry.get(c, None) is None
+                or node_registry[c].node_type != "pod"
+            ]
+            if non_pods:
+                candidates = non_pods
+        if len(packet.path_history) >= 2:
+            previous = packet.path_history[-2]
+            others = [c for c in candidates if str(c) != previous]
+            if others:
+                candidates = others
+        visited = set(packet.path_history)
+        fresh = [c for c in candidates if str(c) not in visited]
+        if fresh:
+            candidates = fresh
         def total_weight(v: NodeId) -> float:
             base = self.get_edge_weight(
                 decision_graph, current_node_id, v, node_registry, None
@@ -97,7 +133,54 @@ class BackPressureRouter(RoutingEngine):
                 + self._params.epsilon * penalty
             )
 
-        return min(candidates, key=total_weight)
+        # Tie-break toward the destination so that equal-weight loads
+        # cannot lock packets into closed rings.
+        def rank(v: NodeId) -> tuple[float, int]:
+            return total_weight(v), self._hop_distance(
+                decision_graph, v, packet.dst
+            )
+
+        return min(candidates, key=rank)
+
+    @staticmethod
+    def _hop_distance(graph: nx.DiGraph, start: NodeId, dst: NodeId) -> int:
+        """BFS hop count from `start` to `dst` (large when unreachable)."""
+        if start == dst:
+            return 0
+        seen = {start}
+        frontier = [start]
+        depth = 1
+        while frontier:
+            nxt_frontier: list[NodeId] = []
+            for node in frontier:
+                for nxt in graph.successors(node):
+                    if nxt == dst:
+                        return depth
+                    if nxt not in seen:
+                        seen.add(nxt)
+                        nxt_frontier.append(nxt)
+            frontier = nxt_frontier
+            depth += 1
+        return 10**6
+
+    @staticmethod
+    def _reaches(
+        graph: nx.DiGraph, start: NodeId, dst: NodeId
+    ) -> bool:
+        """True if `dst` is reachable from `start` in `graph` (BFS)."""
+        if start == dst:
+            return True
+        seen = {start}
+        frontier = [start]
+        while frontier:
+            node = frontier.pop()
+            for nxt in graph.successors(node):
+                if nxt == dst:
+                    return True
+                if nxt not in seen:
+                    seen.add(nxt)
+                    frontier.append(nxt)
+        return False
 
     def physics_penalty(
         self,

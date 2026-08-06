@@ -70,7 +70,11 @@ from skynetra.orchestration.metrics.network import NetworkMetricsCollector
 from skynetra.orchestration.metrics.registry import build_metrics_collectors
 from skynetra.orchestration.results import SimulationResults
 
-MAX_FORWARD_HOPS = 64
+# Per-packet hop cap. Shortest-path routes are simple paths (bounded by
+# node count); the generous headroom lets load-adaptive routers (whose
+# greedy per-hop decisions may wander through congestion) finish their
+# search on large constellations instead of dying mid-flood.
+MAX_FORWARD_HOPS = 256
 METRICS_SNAPSHOT_INTERVAL_S = 1.0
 POD_ATTACH_NEAREST_SATS = 2
 
@@ -363,7 +367,8 @@ class SkyNetraSimulation:
             for plane in range(planes):
                 a = sat_ids[plane * sats_per_plane + sat]
                 b = sat_ids[((plane + 1) % planes) * sats_per_plane + sat]
-                links.add((a, b))
+                if a != b:
+                    links.add((a, b))
         return sorted(links)
 
     @staticmethod

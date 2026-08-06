@@ -59,3 +59,15 @@ Names exported from each package's `__init__.py` (in `__all__`) constitute the p
 ```
 
 Code in a higher layer may always use types from any lower layer. Code in a lower layer must never import from a higher layer.
+
+## Simulation Semantics
+
+The L3 core (`SkyNetraSimulation` / `OrbitDCSimulation`) models a compute-capable LEO constellation. The following semantics are the contract the engines expose:
+
+- **Propagation** — satellites move on circular Kepler orbits (`ReferenceCircularPropagator`, L1) in an inertial (ECI) frame.
+- **Earth rotation** — ground stations and pods are Earth-fixed: their inertial positions rotate at the sidereal rate (`EARTH_SIDEREAL_RATE_RAD_S`). Topology is rebuilt periodically (`topology_update_interval_s`); each rebuild rotates station positions to `time_s`, so GSL edges appear and disappear as satellite elevation crosses the mask.
+- **GSL elevation mask** — a GSL edge exists only when the satellite's elevation at the ground station is at least `gsl_elevation_min_deg` (default 10°), configurable end-to-end via `FullConfig.ground_stations.gsl_elevation_min_deg`.
+- **Link capacities** — ISL edges default to 100 Gbps, GSL edges to 10 Gbps (`NetworkConfig`); a shared (GSL) link splits its capacity across the satellites currently visible at the station.
+- **Queueing / transmission delay** — every link is a `simpy.PriorityResource`. Transmitting `packet.size_bytes` over a link takes `size*8 / (capacity * effective_capacity_fraction * 1e9)` seconds; packets queue at the link, served by `packet.priority`, then travel for the propagation delay of the edge. Relay queues are FIFO and bounded (`RELAY_QUEUE_CAPACITY`); each link's queue drains to zero when idle — there is no phantom backlog.
+- **Compute service time** — pods execute queued tasks (`ComputeJobCompleteEvent.compute_latency_s`) with `service = flops_required / available_compute_flops()`, where available FLOPS degrade with temperature and radiation dose. This replaced the former fixed aggregate delay (no fake `aggregate_time_s`).
+- **Routing contracts** — shortest-path routing never transits a pod (pods are endpoints only); backpressure reads live queue pressure and compute backlog per decision, refuses U-turns, and breaks weight ties toward the destination so it cannot lock into closed rings. Both routers respect a per-packet hop cap (`MAX_FORWARD_HOPS`).

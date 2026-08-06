@@ -177,3 +177,71 @@ class TestBackPressureAvoidFaultyNodes:
         registry[NodeId("a")].update_physics({"fault_probability": 0.9})
         router = BackPressureRouter({"avoid_faulty_nodes": False})
         assert router.select_next_hop(_packet(), NodeId("s"), graph, registry) == NodeId("a")
+
+
+def _pod_ring_graph() -> nx.DiGraph:
+    """Ring of four sats with symmetric edges: greedy min-weight would
+    tie and (without cycle breakers) bounce forever or ring."""
+    g = nx.DiGraph()
+    for nid in ("s1", "s2", "s3", "s4", "dst"):
+        g.add_node(nid, node_type="sat")
+    for a, b in (("s1", "s2"), ("s2", "s3"), ("s3", "s4"), ("s4", "s1")):
+        g.add_edge(a, b, propagation_delay_ms=1.0, capacity=10.0)
+        g.add_edge(b, a, propagation_delay_ms=1.0, capacity=10.0)
+    g.add_edge("s2", "dst", propagation_delay_ms=1.0, capacity=10.0)
+    g.add_edge("s4", "dst", propagation_delay_ms=1.0, capacity=10.0)
+    return g
+
+
+class TestBackPressureCycleBreakers:
+    def test_destination_picked_when_adjacent(self):
+        graph = _pod_ring_graph()
+        router = BackPressureRouter()
+        router.update_topology(graph)
+        packet = _packet()
+        packet.dst = NodeId("dst")
+        packet.path_history = ["s1", "s2"]
+        assert router.select_next_hop(packet, NodeId("s2"), graph, {}) == NodeId("dst")
+
+    def test_no_uturn_while_alternatives_exist(self):
+        graph = _pod_ring_graph()
+        router = BackPressureRouter()
+        router.update_topology(graph)
+        packet = _packet()
+        packet.dst = NodeId("dst")
+        packet.path_history = ["s1", "s2", "s3"]
+        hop = router.select_next_hop(packet, NodeId("s3"), graph, {})
+        assert hop != NodeId("s2")
+
+    def test_dead_end_not_chosen_while_route_exists(self):
+        g = nx.DiGraph()
+        for nid, ntype in (("s", "sat"), ("gs", "ground"), ("t", "sat")):
+            g.add_node(nid, node_type=ntype)
+        g.add_edge("s", "gs", propagation_delay_ms=1.0, capacity=10.0)
+        g.add_edge("s", "t", propagation_delay_ms=1.0, capacity=10.0)
+        router = BackPressureRouter()
+        router.update_topology(g)
+        packet = _packet()
+        packet.dst = NodeId("t")
+        packet.path_history = ["s"]
+        # gs cannot reach t; only t is a viable successor.
+        assert router.select_next_hop(packet, NodeId("s"), g, {}) == NodeId("t")
+
+    def test_non_destination_pod_never_chosen_while_alternatives_exist(self):
+        g = nx.DiGraph()
+        for nid, ntype in (("s", "sat"), ("p", "pod"), ("t", "sat")):
+            g.add_node(nid, node_type=ntype)
+        g.add_edge("s", "p", propagation_delay_ms=1.0, capacity=10.0)
+        g.add_edge("p", "t", propagation_delay_ms=1.0, capacity=10.0)
+        g.add_edge("s", "t", propagation_delay_ms=2.0, capacity=10.0)
+        registry = {
+            NodeId("s"): RelayNode(NodeId("s")),
+            NodeId("p"): PodNode(NodeId("p")),
+            NodeId("t"): RelayNode(NodeId("t")),
+        }
+        router = BackPressureRouter()
+        router.update_topology(g)
+        packet = _packet()
+        packet.dst = NodeId("t")
+        packet.path_history = ["s"]
+        assert router.select_next_hop(packet, NodeId("s"), g, registry) == NodeId("t")

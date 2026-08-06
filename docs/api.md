@@ -6,7 +6,7 @@ This page lists all public classes and functions exported from the `skynetra` pa
 
 | Name | Description |
 |------|-------------|
-| `SkyNetraSimulation` | Main simulation class; manages the SimPy event loop and coordinates all layers |
+| `SkyNetraSimulation` | Main simulation class (`OrbitDCSimulation` alias); manages the SimPy event loop and coordinates all layers |
 | `FullConfig` | Pydantic v2 schema for complete simulation configuration |
 | `SimulationResults` | Dataclass holding aggregated metrics, events, and duration |
 
@@ -90,12 +90,10 @@ This page lists all public classes and functions exported from the `skynetra` pa
 
 | Name | Description |
 |------|-------------|
-| `Node` | Abstract base node with `physics`, `metrics`, `metadata` properties |
-| `PhysicsState` | Dataclass: position, velocity, temperature, radiation_dose, power_available, power_consumed |
-| `MetricsState` | Dataclass: packets_sent/received/dropped, compute_tasks/flops, energy_consumed |
-| `RelayNode` | Simple relay satellite node |
-| `PodNode` | Compute pod node with flops, memory, storage |
-| `GroundStation` | Ground station with lat/lon/altitude |
+| `Node` | Abstract base node with `physics_state`, `metrics_state`, `metadata` properties |
+| `RelayNode` | Bounded-FIFO forwarding relay satellite node |
+| `PodNode` | Compute pod node with FLOPS capacity and thermal/radiation degradation |
+| `GroundStationNode` | Ground station node |
 
 ### Packets
 
@@ -111,23 +109,23 @@ This page lists all public classes and functions exported from the `skynetra` pa
 
 | Name | Description |
 |------|-------------|
-| `RoutingEngine` | ABC with `compute_route(graph, source, destination) -> List[NodeId]` |
-| `ShortestPathRouter` | NetworkX shortest-path implementation |
-| `BackPressureRouter` | Queue-backlog-aware routing with `update_backlog()` |
-| `get_router` | Instantiate routing strategy by name from registry |
-| `list_routers` | List registered routing strategy names |
+| `RoutingEngine` | ABC with `select_next_hop(packet, node, graph, registry, weight_overrides)` and `update_topology(graph)` |
+| `ShortestPathRouter` | Dijkstra router; precomputed next-hop tables, never transits pods |
+| `BackPressureRouter` | Queue-pressure/compute-backlog-aware greedy router with U-turn refusal and tie-breaking toward the destination |
+| `get_routing_engine` | Instantiate routing strategy by name from registry |
+| `list_routing_engines` | List registered routing strategy names |
 | `STRATEGIES` | Dict mapping strategy names to `Type[RoutingEngine]` |
 
 ### Physics
 
 | Name | Description |
 |------|-------------|
-| `PhysicsModel` | ABC with `apply(states, dt) -> Dict[NodeId, PhysicsState]` |
+| `PhysicsModel` | ABC with `compute_node_physics(...)` and `compute_link_physics(...)`; `enabled` opt-in flag |
 | `ThermalModel` | Thermal equilibrium model with albedo/emissivity |
 | `RadiationModel` | Background radiation dose accumulation |
 | `PowerModel` | Solar panel power generation model |
 | `DopplerModel` | Doppler shift placeholder |
-| `PhysicsOrchestrator` | Chains multiple PhysicsModel instances sequentially |
+| `PhysicsOrchestrator` | Chains enabled PhysicsModel instances sequentially per tick |
 | `get_physics_model` | Instantiate physics model by name from registry |
 | `list_physics_models` | List registered physics model names |
 | `STRATEGIES` | Dict mapping model names to `Type[PhysicsModel]` |
@@ -153,7 +151,7 @@ This page lists all public classes and functions exported from the `skynetra` pa
 
 | Name | Description |
 |------|-------------|
-| `SkyNetraSimulation` | Main simulation coordinator; runs the SimPy loop |
+| `SkyNetraSimulation` | Main simulation coordinator; runs the SimPy loop (`OrbitDCSimulation` alias) |
 | `SimulationContext` | Dataclass holding all mutable simulation state |
 | `SimulationResults` | Dataclass: metrics dict, events list, duration |
 
@@ -174,7 +172,7 @@ This page lists all public classes and functions exported from the `skynetra` pa
 
 | Name | Description |
 |------|-------------|
-| `MetricsCollector` | ABC with `collect(context) -> Dict[str, Any]` |
+| `MetricsCollector` | ABC with `attach(event_bus)`, `get_summary()`, `to_dataframe()` |
 | `MetricsAggregator` | Runs all collectors and merges results |
 | `NetworkMetricsCollector` | Total packets, dropped, edge/node count |
 | `ComputeMetricsCollector` | Total compute tasks and FLOPs |

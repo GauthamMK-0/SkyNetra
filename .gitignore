@@ -31,7 +31,9 @@ site/
 
 # Regenerable run artifacts
 results/compare/
-results/sim_results.json
+results/*.png
+results/*.csv
+results/*.json
 
 # Secrets
 .env

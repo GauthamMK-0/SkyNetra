@@ -241,3 +241,35 @@ class TestRoutingRegistry:
 
     def test_static_strategy_set(self):
         assert set(STRATEGIES.keys()) == {"shortest_path", "backpressure"}
+
+
+def _pod_transit_graph() -> nx.DiGraph:
+    """Shortest s->t path cuts THROUGH pod p (3 hops via p vs 4 via sats)."""
+    g = nx.DiGraph()
+    for nid, ntype in (("s", "sat"), ("p", "pod"), ("a", "sat"), ("b", "sat"), ("t", "sat")):
+        g.add_node(nid, node_type=ntype)
+    g.add_edge("s", "p", propagation_delay_ms=1.0, capacity=10.0)
+    g.add_edge("p", "a", propagation_delay_ms=1.0, capacity=10.0)
+    g.add_edge("a", "t", propagation_delay_ms=1.0, capacity=10.0)
+    g.add_edge("s", "b", propagation_delay_ms=2.0, capacity=10.0)
+    g.add_edge("b", "t", propagation_delay_ms=2.0, capacity=10.0)
+    return g
+
+
+class TestShortestPathNeverTransitsPods:
+    def test_precomputed_route_skips_pod(self):
+        graph = _pod_transit_graph()
+        router = ShortestPathRouter()
+        router.update_topology(graph)
+        registry = {NodeId(nid): RelayNode(NodeId(nid)) for nid in ("s", "a", "b", "t")}
+        hop = router.select_next_hop(_packet(), NodeId("s"), graph, registry)
+        assert hop == NodeId("b")
+
+    def test_live_dijkstra_route_to_pod_destination(self):
+        graph = _pod_transit_graph()
+        router = ShortestPathRouter()
+        router.update_topology(graph)
+        packet = _packet()
+        packet.dst = NodeId("p")
+        registry = {NodeId(nid): RelayNode(NodeId(nid)) for nid in ("s", "a", "b", "t")}
+        assert router.select_next_hop(packet, NodeId("s"), graph, registry) == NodeId("p")

@@ -19,6 +19,7 @@ May import from: itself, engines, domain, foundation.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -99,19 +100,72 @@ class ShortestPathRouter(RoutingEngine):
         next_hop: dict[NodeId, dict[NodeId, NodeId]] = {}
         weight_fn = self._edge_weight_fn()
         for source in graph.nodes():
-            targets: dict[NodeId, NodeId] = {}
+            transit = self._transit_subgraph(graph, source)
             try:
                 lengths, paths = nx.single_source_dijkstra(
-                    graph, source, weight=weight_fn
+                    transit, source, weight=weight_fn
                 )
             except nx.NetworkXError:
                 lengths, paths = {}, {}
+            targets: dict[NodeId, NodeId] = {}
             for target in lengths:
                 route = paths[target]
                 if len(route) > 1:
                     targets[target] = route[1]
+            self._patch_pod_targets(graph, source, lengths, paths, targets)
             next_hop[source] = targets
         return next_hop
+
+    def _transit_subgraph(
+        self, graph: nx.DiGraph, keep: NodeId
+    ) -> nx.DiGraph:
+        """Subgraph with pod nodes removed except `keep`.
+
+        Pods are compute endpoints: routing may start at a pod but never
+        pass through one (L3 drops pod transit).
+        """
+        return graph.subgraph(
+            [
+                n
+                for n in graph.nodes()
+                if graph.nodes[n].get("node_type") != "pod" or n == keep
+            ]
+        )
+
+    def _patch_pod_targets(
+        self,
+        graph: nx.DiGraph,
+        source: NodeId,
+        lengths: dict[NodeId, float],
+        paths: dict[NodeId, list[NodeId]],
+        targets: dict[NodeId, NodeId],
+    ) -> None:
+        """Fill next hops for pod destinations.
+
+        A pod is reached via its attached satellite with the shortest
+        distance; if `source` is itself attached to the pod, the direct
+        edge is the next hop.
+        """
+        weight_fn = self._edge_weight_fn()
+        for pod in graph.nodes():
+            if graph.nodes[pod].get("node_type") != "pod" or pod == source:
+                continue
+            attached = list(graph.predecessors(pod))
+            if not attached:
+                continue
+            best_sat = min(
+                attached,
+                key=lambda s: lengths.get(s, math.inf)
+                + weight_fn(s, pod, graph.edges[s, pod]),
+            )
+            if best_sat not in lengths:
+                continue
+            if best_sat == source:
+                targets[pod] = pod
+            else:
+                route = paths[best_sat]
+                if len(route) > 1:
+                    targets[pod] = route[1]
 
     def _dijkstra_next_hop(
         self,
@@ -124,6 +178,17 @@ class ShortestPathRouter(RoutingEngine):
             return None
         if source == target:
             return None
+        if graph.nodes[target].get("node_type") == "pod":
+            transit = self._transit_subgraph(graph, source)
+            try:
+                lengths, paths = nx.single_source_dijkstra(
+                    transit, source, weight=self._edge_weight_fn(weight_overrides)
+                )
+            except nx.NetworkXError:
+                return None
+            targets: dict[NodeId, NodeId] = {}
+            self._patch_pod_targets(graph, source, lengths, paths, targets)
+            return targets.get(target)
         weight_fn = self._edge_weight_fn(weight_overrides)
         try:
             route = nx.dijkstra_path(graph, source, target, weight=weight_fn)

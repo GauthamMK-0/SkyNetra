@@ -1,37 +1,30 @@
+"""
+Minimal SkyNetra setup: three relay satellites and one ground station,
+shortest-path routing, no physics, no workloads.
+
+Run:  python examples/basic_relay_run.py
+"""
+
 from __future__ import annotations
 
-from typing import Dict
-
-from skynetra.domain.nodes import GroundStation, RelayNode
-from skynetra.engines.routing import ShortestPathRouter
-from skynetra.foundation.types import NodeId
-from skynetra.orchestration.engine import SkyNetraSimulation
-from skynetra.orchestration.metrics import NetworkMetricsCollector, TopologyMetricsCollector
+from skynetra.interface.config.defaults import FullConfig, config_to_simulation_spec
+from skynetra.orchestration.engine import OrbitDCSimulation
 
 
 def main() -> None:
-    nodes: Dict[NodeId, RelayNode | GroundStation] = {
-        NodeId("sat-1"): RelayNode(NodeId("sat-1")),
-        NodeId("sat-2"): RelayNode(NodeId("sat-2")),
-        NodeId("sat-3"): RelayNode(NodeId("sat-3")),
-        NodeId("gs-1"): GroundStation(NodeId("gs-1")),
-    }
-
-    router = ShortestPathRouter()
-    collectors = [NetworkMetricsCollector(), TopologyMetricsCollector()]
-
-    sim = SkyNetraSimulation(
-        nodes=nodes,
-        routing_engine=router,
-        metrics_collectors=collectors,
-        dt=1.0,
+    config = FullConfig(
+        simulation={"duration_s": 30.0, "seed": 42},
+        constellation={"n_planes": 1, "sats_per_plane": 3},
+        ground_stations={"n_ground_stations": 1},
+        pods={"n_pods": 0},
+        workload={"active": []},
+        metrics={"active": ["network_metrics", "topology_metrics"]},
     )
 
-    results = sim.run(duration=5.0)
+    results = OrbitDCSimulation.from_spec(config_to_simulation_spec(config)).run()
 
-    print(f"Simulation ran for {results.duration} seconds")
-    print(f"Metrics keys: {list(results.metrics.keys())}")
-    for name, data in results.metrics.items():
+    print(f"Basic relay simulation: {results.duration}s")
+    for name, data in results.engine_metrics.items():
         print(f"  {name}: {data}")
 
 
