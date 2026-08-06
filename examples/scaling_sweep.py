@@ -8,6 +8,11 @@ Each config is expressed as a Layer 4 `FullConfig`, translated with
 `OrbitDCSimulation.from_spec(spec).run()` — the L4 -> L3 -> L2/L1/L0
 path end to end, exactly as the `skynetra run` CLI does.
 
+Independent (seed-distinct) runs are embarrassingly parallel: pass
+`--workers N` to spread them over N processes (default: min(cpu_count,
+8); `--workers 1` forces the serial path). Output files are identical
+regardless of worker count — rows are reordered by task index.
+
 Outputs under results/:
     scaling_sweep_results.csv      one row per config (mean/std per metric)
     scaling_sweep_summary.json     machine-readable copy of the same data
@@ -19,8 +24,11 @@ plus a printed SP-vs-BP comparison table.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
+import multiprocessing
+import os
 from pathlib import Path
 from statistics import mean, stdev
 from typing import Any
@@ -104,51 +112,132 @@ def save_figure(fig: plt.Figure, name: str) -> None:
     plt.close(fig)
 
 
-def main() -> None:
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    rows: list[dict[str, Any]] = []
+def build_tasks() -> list[dict[str, Any]]:
+    """One picklable task dict per (config, run_index) pair.
 
+    Tasks are ordered deterministically; workers return (task_index,
+    stats) so the parent can reassemble rows in sweep order regardless
+    of completion order.
+    """
+    tasks: list[dict[str, Any]] = []
+    index = 0
     for n_planes, sats_per_plane in CONSTELLATION_SIZES:
         for num_pods in NUM_PODS_OPTIONS:
             for routing in ROUTING_STRATEGIES:
                 for physics_mode in PHYSICS_MODES:
-                    cfg = FullConfig(
-                        simulation={"duration_s": SIM_DURATION, "seed": BASE_SEED},
-                        constellation={
-                            "n_planes": n_planes,
-                            "sats_per_plane": sats_per_plane,
-                        },
-                        pods={"n_pods": num_pods},
-                        routing={"strategy": routing},
-                    )
-                    apply_physics_mode(cfg, physics_mode)
-                    per_run = []
                     for run_index in range(N_RUNS):
-                        cfg.simulation.seed = BASE_SEED + run_index
-                        per_run.append(run_config(cfg))
+                        tasks.append(
+                            {
+                                "index": index,
+                                "n_planes": n_planes,
+                                "sats_per_plane": sats_per_plane,
+                                "num_pods": num_pods,
+                                "routing": routing,
+                                "physics_mode": physics_mode,
+                                "run_index": run_index,
+                            }
+                        )
+                        index += 1
+    return tasks
 
-                    row: dict[str, Any] = {
-                        "n_planes": n_planes,
-                        "sats_per_plane": sats_per_plane,
-                        "constellation_size": n_planes * sats_per_plane,
-                        "num_pods": num_pods,
-                        "routing": routing,
-                        "physics_mode": physics_mode,
-                        "n_runs": N_RUNS,
-                    }
-                    for key in per_run[0]:
-                        values = [run[key] for run in per_run]
-                        row[f"{key}_mean"], row[f"{key}_std"] = mean_std(values)
-                    rows.append(row)
-                    print(
-                        f"done: {n_planes}x{sats_per_plane} sats, {num_pods} pods, "
-                        f"{routing}, {physics_mode}"
-                    )
+
+def run_task(task: dict[str, Any]) -> tuple[int, dict[str, float]]:
+    """Run one seeded simulation for a task dict (worker entry point)."""
+    cfg = FullConfig(
+        simulation={
+            "duration_s": SIM_DURATION,
+            "seed": BASE_SEED + int(task["run_index"]),
+        },
+        constellation={
+            "n_planes": int(task["n_planes"]),
+            "sats_per_plane": int(task["sats_per_plane"]),
+        },
+        pods={"n_pods": int(task["num_pods"])},
+        routing={"strategy": task["routing"]},
+    )
+    apply_physics_mode(cfg, task["physics_mode"])
+    return int(task["index"]), run_config(cfg)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="number of parallel worker processes "
+        "(default: min(cpu_count, 8); 1 = serial)",
+    )
+    args = parser.parse_args()
+    workers = args.workers if args.workers is not None else min(os.cpu_count() or 1, 8)
+
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    tasks = build_tasks()
+    per_task: list[dict[str, float] | None] = [None] * len(tasks)
+
+    if workers <= 1:
+        for task in tasks:
+            index, stats = run_task(task)
+            per_task[index] = stats
+            print(_progress_line(task, index + 1, len(tasks)))
+    else:
+        print(f"Running {len(tasks)} tasks with {workers} workers...")
+        with multiprocessing.Pool(processes=workers) as pool:
+            for index, stats in pool.imap_unordered(run_task, tasks, chunksize=1):
+                per_task[index] = stats
+                task = tasks[index]
+                print(_progress_line(task, index + 1, len(tasks)))
+
+    rows = _aggregate_rows(tasks, per_task)
 
     _write_csv(rows)
     _write_json(rows)
     _write_figures(rows)
     _print_comparison_table(rows)
+
+
+def _progress_line(task: dict[str, Any], done: int, total: int) -> str:
+    return (
+        f"[{done}/{total}] {task['n_planes']}x{task['sats_per_plane']} sats, "
+        f"{task['num_pods']} pods, {task['routing']}, {task['physics_mode']} "
+        f"(seed {BASE_SEED + int(task['run_index'])})"
+    )
+
+
+def _aggregate_rows(
+    tasks: list[dict[str, Any]], per_task: list[dict[str, float] | None]
+) -> list[dict[str, Any]]:
+    """Group per-run stats back into one row per config (task order
+    preserved, so CSV/JSON output is identical for any --workers)."""
+    groups: dict[tuple[Any, ...], list[dict[str, float]]] = {}
+    for task in tasks:
+        stats = per_task[int(task["index"])]
+        if stats is None:
+            raise RuntimeError(f"task {task['index']} produced no result")
+        key = (
+            task["n_planes"],
+            task["sats_per_plane"],
+            task["num_pods"],
+            task["routing"],
+            task["physics_mode"],
+        )
+        groups.setdefault(key, []).append(stats)
+    rows: list[dict[str, Any]] = []
+    for (n_planes, sats_per_plane, num_pods, routing, physics_mode), runs in groups.items():
+        row: dict[str, Any] = {
+            "n_planes": n_planes,
+            "sats_per_plane": sats_per_plane,
+            "constellation_size": int(n_planes) * int(sats_per_plane),
+            "num_pods": num_pods,
+            "routing": routing,
+            "physics_mode": physics_mode,
+            "n_runs": len(runs),
+        }
+        for key in runs[0]:
+            values = [run[key] for run in runs]
+            row[f"{key}_mean"], row[f"{key}_std"] = mean_std(values)
+        rows.append(row)
+    return rows
 
 
 def _write_csv(rows: list[dict[str, Any]]) -> None:

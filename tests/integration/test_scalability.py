@@ -49,3 +49,16 @@ def test_6x10_shortest_path_within_budget() -> None:
 
 def test_6x10_backpressure_within_budget() -> None:
     _run_bounded("backpressure")
+
+
+def test_6x10_backpressure_hot_path_speed_guard() -> None:
+    """Perf regression guard for the Phase 4 hot-path tables.
+
+    The pre-optimization backpressure run took ~25s for this config;
+    the cached reachability/hop tables brought it to ~1s. A 6x budget
+    fails loudly if per-hop BFS work is ever reintroduced.
+    """
+    started = time.perf_counter()
+    _run_bounded("backpressure")
+    elapsed = time.perf_counter() - started
+    assert elapsed < 6.0, f"backpressure hot path regressed: took {elapsed:.1f}s"

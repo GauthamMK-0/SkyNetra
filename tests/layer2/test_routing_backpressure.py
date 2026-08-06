@@ -122,15 +122,40 @@ class TestBackPressureRouter:
         router = BackPressureRouter()
         assert router.select_next_hop(packet, NodeId("t"), graph, registry) is None
 
-    def test_update_topology_is_noop(self):
+    def test_update_topology_invalidates_cached_view(self):
         router = BackPressureRouter()
         router.update_topology(_graph())
-        assert (
-            router.select_next_hop(
-                _packet(), NodeId("s"), _graph(), _registry_with_queue_at_a(queue_depth=0)
-            )
-            == NodeId("a")
+        view = router._operational_view(
+            _graph(), _registry_with_queue_at_a(queue_depth=0)
         )
+        assert view[1][NodeId("s")] == frozenset(
+            {NodeId("s"), NodeId("a"), NodeId("b"), NodeId("t")}
+        )
+        assert view[2][NodeId("s")][NodeId("t")] == 2
+        router.update_topology(_graph())
+        assert router._view_cache is None
+
+    def test_cached_view_reused_without_rebuild(self):
+        router = BackPressureRouter()
+        graph = _graph()
+        registry = _registry_with_queue_at_a(queue_depth=0)
+        router.select_next_hop(_packet(), NodeId("s"), graph, registry)
+        cached = router._view_cache
+        assert cached is not None
+        router.select_next_hop(_packet(), NodeId("s"), graph, registry)
+        assert router._view_cache is cached
+
+    def test_fault_change_rebuilds_view(self):
+        router = BackPressureRouter()
+        graph = _graph()
+        registry = _registry_with_queue_at_a(queue_depth=0)
+        router.select_next_hop(_packet(), NodeId("s"), graph, registry)
+        cached = router._view_cache
+        registry[NodeId("a")].update_physics({"fault_probability": 0.9})
+        router.select_next_hop(_packet(), NodeId("s"), graph, registry)
+        assert router._view_cache is not cached
+        assert router._view_cache is not None
+        assert NodeId("a") not in router._view_cache[1][0]
 
 
 class TestBackPressurePhysicsPenalty:
