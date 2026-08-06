@@ -2,11 +2,13 @@
 Domain layer (L1) — compute pod node.
 
 A pod hosts on-orbit compute: it accepts packets into a bounded compute
-queue and processes them via `process_compute`, accruing FLOPS and
-energy metrics. The degradation of available compute from thermal load
-and radiation dose is a deterministic Layer 1 formula; Layer 2 physics
-engines push the temperature/dose values in via `update_physics`, and
-scheduler/workload algorithms (Layer 2/3) decide what gets queued.
+queue; the Layer 3 compute loop dispatches queued tasks via
+`take_next_task` and records completion via `record_compute`, accruing
+FLOPS and energy metrics. The degradation of available compute from
+thermal load and radiation dose is a deterministic Layer 1 formula;
+Layer 2 physics engines push the temperature/dose values in via
+`update_physics`, and scheduler/workload algorithms (Layer 2/3) decide
+what gets queued.
 
 May import from: itself, domain, foundation.
 """
@@ -79,17 +81,23 @@ class PodNode(Node):
         self._publish("packet_accepted", {"packet_id": packet.packet_id})
         return True
 
-    def process_compute(self) -> Packet | None:
-        """Process the oldest queued task.
+    def take_next_task(self) -> Packet | None:
+        """Pop the oldest queued compute task for service.
 
-        Accrues compute-task and FLOPS metrics proportional to the
-        packet's required FLOPS, plus an energy estimate based on the
-        currently available compute rate. Returns the processed packet,
-        or None when the queue is empty.
+        Called by the Layer 3 compute loop when it dispatches a task to
+        the pod's service; the task is removed from the queue so pending
+        backlog (read by load-aware routing) reflects tasks still
+        awaiting service. Returns None when the queue is empty.
         """
         if not self._queue:
             return None
-        packet = self._queue.popleft()
+        return self._queue.popleft()
+
+    def record_compute(self, packet: Packet) -> None:
+        """Accrue completion metrics for a serviced task: task and FLOPS
+        counters plus an energy estimate based on the currently
+        available compute rate. Service time is a Layer 3 concern.
+        """
         self._metrics_state["compute_tasks"] += 1
         self._metrics_state["compute_flops"] += packet.flops_required
         self._metrics_state["energy_consumed"] += (
@@ -97,7 +105,6 @@ class PodNode(Node):
         )
         self._metrics_state["packets_sent"] += 1
         self._publish("packet_computed", {"packet_id": packet.packet_id})
-        return packet
 
     def get_queue_depth(self) -> int:
         return len(self._queue)

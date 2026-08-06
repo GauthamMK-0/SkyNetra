@@ -63,7 +63,7 @@ def _build_sim(
         physics_orchestrator=physics,
         workloads=[
             FederatedLearningWorkload(
-                {"round_interval_s": 10.0, "n_rounds": 3, "aggregate_time_s": 1.0}
+                {"round_interval_s": 10.0, "n_rounds": 3, "aggregate_flops": 1e10}
             )
         ],
         metrics_collectors=metrics or [],

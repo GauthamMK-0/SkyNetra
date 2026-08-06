@@ -173,20 +173,30 @@ class TestPodNode:
             1e12 * math.exp(-1.0) * 0.5
         )
 
-    def test_process_compute_accrues_metrics(self):
+    def test_take_next_task_dispatches_oldest(self):
+        pod = PodNode(NodeId("pod-1"))
+        first = _packet("pkt-1", flops_required=2e9)
+        second = _packet("pkt-2", flops_required=3e9)
+        assert pod.process_packet(first) is True
+        assert pod.process_packet(second) is True
+        assert pod.get_queue_depth() == 2
+        assert pod.take_next_task() is first
+        assert pod.take_next_task() is second
+        assert pod.get_queue_depth() == 0
+
+    def test_record_compute_accrues_metrics(self):
         pod = PodNode(NodeId("pod-1"))
         packet = _packet("pkt-1", flops_required=2e9)
         assert pod.process_packet(packet) is True
-        assert pod.get_queue_depth() == 1
-        assert pod.process_compute() is packet
-        assert pod.get_queue_depth() == 0
+        assert pod.take_next_task() is packet
+        pod.record_compute(packet)
         assert pod.metrics_state["compute_tasks"] == 1
         assert pod.metrics_state["compute_flops"] == 2e9
         assert pod.metrics_state["energy_consumed"] > 0.0
 
-    def test_process_compute_empty_queue(self):
+    def test_take_next_task_empty_queue(self):
         pod = PodNode(NodeId("pod-1"))
-        assert pod.process_compute() is None
+        assert pod.take_next_task() is None
 
 
 class TestGroundStationNode:

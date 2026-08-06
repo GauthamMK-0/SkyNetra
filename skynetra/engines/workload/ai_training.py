@@ -83,6 +83,7 @@ class AITrainingSyncWorkload(WorkloadGenerator):
                             server,
                             profile.gradient_size_bytes,
                             profile.packet_type,
+                            flops_required=profile.gradient_flops,
                             priority=profile.priority,
                         )
                     )
@@ -97,6 +98,7 @@ class AITrainingSyncWorkload(WorkloadGenerator):
                                     dst,
                                     profile.gradient_size_bytes,
                                     profile.packet_type,
+                                    flops_required=profile.gradient_flops,
                                     priority=profile.priority,
                                 )
                             )

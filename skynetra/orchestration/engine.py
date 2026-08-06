@@ -250,6 +250,8 @@ class SkyNetraSimulation:
                 "metrics_snapshots": [],
             },
         )
+        for pod_id in pod_ids:
+            context.compute_stores[pod_id] = simpy.Store(env)
         self._context = context
         return context
 
@@ -263,6 +265,8 @@ class SkyNetraSimulation:
             context.env.process(self._physics_tick_loop(context))
         for workload in self._workloads:
             context.env.process(self._safe_workload(context, workload))
+        for pod_id in context.pod_ids:
+            context.env.process(self._compute_loop(context, pod_id))
         context.env.process(self._metrics_snapshot_loop(context))
 
         context.env.run(until=context.sim_duration_s)
@@ -481,6 +485,41 @@ class SkyNetraSimulation:
                 ),
             )
 
+    def _compute_loop(
+        self, context: SimulationContext, pod_id: NodeId
+    ) -> Generator[Any, None, None]:
+        """Per-pod compute server: drains the pod's task queue with a
+        service time of `flops_required / available_compute_flops()`.
+
+        Woken by a token placed in the pod's `simpy.Store` on delivery;
+        the task itself is dispatched from the pod's queue via
+        `take_next_task` so the pod queue (read by load-aware routing)
+        reflects true pending backlog.
+        """
+        env = context.env
+        store = context.compute_stores.get(pod_id)
+        pod = context.node_registry.get(pod_id)
+        if store is None or not isinstance(pod, PodNode):
+            return
+        while True:
+            yield store.get()
+            task = pod.take_next_task()
+            if task is None:
+                continue
+            service_s = task.flops_required / max(pod.available_compute_flops(), 1.0)
+            yield env.timeout(service_s)
+            pod.record_compute(task)
+            self._publish(
+                context,
+                ComputeJobCompleteEvent(
+                    time=env.now,
+                    event_type="compute_job_complete",
+                    node_id=pod_id,
+                    packet=task,
+                    compute_latency_s=max(0.0, env.now - task.created_at),
+                ),
+            )
+
     # ------------------------------------------------------------------
     # Packet forwarding
     # ------------------------------------------------------------------
@@ -556,6 +595,15 @@ class SkyNetraSimulation:
                 or not context.graph.has_edge(current_node_id, next_hop)
             ):
                 self._drop(context, packet, current_node_id, "no_route")
+                return
+
+            next_node = registry.get(next_hop)
+            if (
+                next_node is not None
+                and next_node.node_type == "pod"
+                and next_hop != packet.dst
+            ):
+                self._drop(context, packet, current_node_id, "pod_not_transit")
                 return
 
             dequeue = getattr(current, "forward_packet", None)
@@ -652,18 +700,9 @@ class SkyNetraSimulation:
             ),
         )
         if dst_node.node_type == "pod":
-            self._publish(
-                context,
-                ComputeJobCompleteEvent(
-                    time=env.now,
-                    event_type="compute_job_complete",
-                    node_id=dst,
-                    packet=packet,
-                ),
-            )
-            compute = getattr(dst_node, "process_compute", None)
-            if compute is not None:
-                compute()
+            store = context.compute_stores.get(dst)
+            if store is not None:
+                store.put(packet)
 
     def _drop(
         self, context: SimulationContext, packet: Packet, node_id: NodeId, reason: str

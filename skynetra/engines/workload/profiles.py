@@ -41,6 +41,7 @@ class AITrainingSyncProfile:
 
     n_workers: int = 8
     gradient_size_bytes: int = 4096
+    gradient_flops: float = 1e11
     sync_interval_s: float = 60.0
     pattern: str = PATTERN_ALL_REDUCE
     rounds: int | None = None
@@ -65,6 +66,7 @@ class InferenceQueryProfile:
     """
 
     query_size_bytes: int = 256
+    flops_required: float = 1e9
     mean_interval_s: float = 10.0
     arrival_pattern: str = ARRIVAL_POISSON
     on_duration_s: float = 30.0
@@ -83,8 +85,8 @@ class FederatedLearningProfile:
     """3-phase federated learning round: gather -> aggregate -> broadcast.
 
     Each round: every worker sends its model to the aggregator
-    (`gather_packet_type`), the aggregator "aggregates" for
-    `aggregate_time_s` (no packets — pure compute delay), then the
+    (`gather_packet_type`), the aggregator pod computes the merged model
+    (service time governed by `aggregate_flops` at the pod), then the
     aggregator broadcasts the merged model back to every worker
     (`broadcast_packet_type`).
     """
@@ -93,7 +95,7 @@ class FederatedLearningProfile:
     aggregator: NodeId | None = None
     worker_model_size_bytes: int = 8192
     broadcast_size_bytes: int = 8192
-    aggregate_time_s: float = 10.0
+    aggregate_flops: float = 1e10
     round_interval_s: float = 300.0
     gather_packet_type: str = "fl_gather"
     broadcast_packet_type: str = "fl_broadcast"

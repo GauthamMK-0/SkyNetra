@@ -45,6 +45,8 @@ class ComputeMetricsCollector(MetricsCollector):
         self._flops_completed = 0.0
         self._compute_drops = 0
         self._jobs_by_pod: dict[str, int] = {}
+        self._latency_sum_s = 0.0
+        self._latency_count = 0
 
     def attach(self, event_bus: EventBus) -> None:
         event_bus.subscribe(ComputeJobCompleteEvent, self._on_job_complete)
@@ -53,6 +55,8 @@ class ComputeMetricsCollector(MetricsCollector):
     def _on_job_complete(self, event: ComputeJobCompleteEvent) -> None:
         self._jobs_completed += 1
         self._flops_completed += float(event.packet.flops_required)
+        self._latency_sum_s += float(event.compute_latency_s)
+        self._latency_count += 1
         pod_id = str(event.node_id)
         self._jobs_by_pod[pod_id] = self._jobs_by_pod.get(pod_id, 0) + 1
 
@@ -66,6 +70,9 @@ class ComputeMetricsCollector(MetricsCollector):
             "compute_flops_completed": self._flops_completed,
             "compute_drops": self._compute_drops,
             "jobs_by_pod": dict(self._jobs_by_pod),
+            "avg_compute_latency_s": (
+                self._latency_sum_s / self._latency_count if self._latency_count else 0.0
+            ),
         }
 
     def to_dataframe(self) -> pd.DataFrame:
@@ -76,3 +83,5 @@ class ComputeMetricsCollector(MetricsCollector):
         self._flops_completed = 0.0
         self._compute_drops = 0
         self._jobs_by_pod = {}
+        self._latency_sum_s = 0.0
+        self._latency_count = 0

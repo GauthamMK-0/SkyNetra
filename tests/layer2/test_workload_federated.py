@@ -33,7 +33,7 @@ class TestFederatedLearningWorkload:
                     "n_rounds": 1,
                     "aggregator": NodeId("p0"),
                     "round_interval_s": 10.0,
-                    "aggregate_time_s": 5.0,
+                    "aggregate_flops": 1e10,
                 }
             ),
             _pods(3),
@@ -53,7 +53,7 @@ class TestFederatedLearningWorkload:
                     "n_rounds": 1,
                     "aggregator": NodeId("p0"),
                     "round_interval_s": 10.0,
-                    "aggregate_time_s": 5.0,
+                    "aggregate_flops": 1e10,
                 }
             ),
             _pods(3),
@@ -70,7 +70,7 @@ class TestFederatedLearningWorkload:
                     "n_rounds": 1,
                     "aggregator": NodeId("p0"),
                     "round_interval_s": 10.0,
-                    "aggregate_time_s": 5.0,
+                    "aggregate_flops": 1e10,
                 }
             ),
             _pods(3),
@@ -80,22 +80,24 @@ class TestFederatedLearningWorkload:
         assert all(p.src == NodeId("p0") for p in broadcasts)
         assert {p.dst for p in broadcasts} == {NodeId("p1"), NodeId("p2")}
 
-    def test_gather_then_aggregate_then_broadcast_timing(self):
+    def test_gather_then_broadcast_timing(self):
         sent = _run(
             FederatedLearningWorkload(
                 {
                     "n_rounds": 1,
                     "aggregator": NodeId("p0"),
                     "round_interval_s": 10.0,
-                    "aggregate_time_s": 5.0,
+                    "aggregate_flops": 1e10,
                 }
             ),
             _pods(3),
             100.0,
         )
         assert all(p.created_at == 10.0 for p in sent if p.packet_type == "fl_gather")
+        # No workload-level aggregate delay: broadcasts follow immediately;
+        # pod compute service time is an L3 (engine) concern.
         assert all(
-            p.created_at == 15.0 for p in sent if p.packet_type == "fl_broadcast"
+            p.created_at == 10.0 for p in sent if p.packet_type == "fl_broadcast"
         )
 
     def test_rounds_honored(self):
@@ -105,7 +107,7 @@ class TestFederatedLearningWorkload:
                     "n_rounds": 3,
                     "aggregator": NodeId("p0"),
                     "round_interval_s": 10.0,
-                    "aggregate_time_s": 1.0,
+                    "aggregate_flops": 1e10,
                 }
             ),
             _pods(3),
@@ -118,7 +120,7 @@ class TestFederatedLearningWorkload:
     def test_default_aggregator_is_first_active_pod(self):
         sent = _run(
             FederatedLearningWorkload(
-                {"n_rounds": 1, "round_interval_s": 10.0, "aggregate_time_s": 5.0}
+                {"n_rounds": 1, "round_interval_s": 10.0, "aggregate_flops": 1e10}
             ),
             _pods(3),
             100.0,
@@ -136,7 +138,7 @@ class TestFederatedLearningWorkload:
                     "n_rounds": 1,
                     "aggregator": NodeId("p0"),
                     "round_interval_s": 10.0,
-                    "aggregate_time_s": 5.0,
+                    "aggregate_flops": 1e10,
                 }
             ),
             registry,
@@ -154,7 +156,7 @@ class TestFederatedLearningWorkload:
                     "n_rounds": 1,
                     "aggregator": NodeId("p0"),
                     "round_interval_s": 10.0,
-                    "aggregate_time_s": 5.0,
+                    "aggregate_flops": 1e10,
                 }
             ),
             registry,
@@ -167,7 +169,7 @@ class TestFederatedLearningWorkload:
         registry[NodeId("p0")].update_physics({"fault_probability": 1.0})
         sent = _run(
             FederatedLearningWorkload(
-                {"n_rounds": 1, "round_interval_s": 10.0, "aggregate_time_s": 5.0}
+                {"n_rounds": 1, "round_interval_s": 10.0, "aggregate_flops": 1e10}
             ),
             registry,
             100.0,

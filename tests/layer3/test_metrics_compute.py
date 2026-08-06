@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from skynetra.domain.packets.packet import Packet
 from skynetra.foundation.eventbus import EventBus
 from skynetra.foundation.types import NodeId
@@ -72,6 +74,33 @@ class TestComputeMetricsCollector:
         assert summary["compute_jobs_completed"] == 3
         assert summary["compute_flops_completed"] == 1750.0
         assert summary["jobs_by_pod"] == {"pod-1": 2, "pod-2": 1}
+
+    def test_accumulates_compute_latency(self):
+        bus = EventBus()
+        collector = _attach(bus)
+
+        bus.publish(
+            ComputeJobCompleteEvent(
+                time=1.0,
+                event_type="compute_job_complete",
+                node_id=NodeId("pod-1"),
+                packet=_compute_packet("p1"),
+                compute_latency_s=0.25,
+            )
+        )
+        bus.publish(
+            ComputeJobCompleteEvent(
+                time=2.0,
+                event_type="compute_job_complete",
+                node_id=NodeId("pod-1"),
+                packet=_compute_packet("p2"),
+                compute_latency_s=0.75,
+            )
+        )
+
+        summary = collector.get_summary()
+        assert summary["avg_compute_latency_s"] == pytest.approx(0.5)
+        assert summary["compute_jobs_completed"] == 2
 
     def test_counts_compute_packet_drops(self):
         bus = EventBus()
@@ -158,5 +187,6 @@ class TestComputeMetricsCollector:
             "compute_flops_completed",
             "compute_drops",
             "jobs_by_pod",
+            "avg_compute_latency_s",
         ]
         assert len(df) == 1

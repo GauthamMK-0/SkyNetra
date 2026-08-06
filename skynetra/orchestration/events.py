@@ -85,6 +85,7 @@ class ComputeJobCompleteEvent(SimulationEvent):
 
     node_id: NodeId
     packet: Packet
+    compute_latency_s: float = 0.0
 
 
 @dataclass

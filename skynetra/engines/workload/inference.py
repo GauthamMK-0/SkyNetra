@@ -74,6 +74,7 @@ class InferenceQueryWorkload(WorkloadGenerator):
                 self._rng.choice(pods),
                 self._profile.query_size_bytes,
                 self._profile.packet_type,
+                flops_required=self._profile.flops_required,
                 priority=self._profile.priority,
             )
         )

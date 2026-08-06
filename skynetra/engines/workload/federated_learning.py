@@ -4,9 +4,9 @@ Engines layer (L2) — federated learning workload generator.
 3-phase federated learning rounds:
 
   gather     — every worker sends its model to the aggregator
-               (`fl_gather` packets).
-  aggregate  — the aggregator merges models locally; no packets, only
-               `yield env.timeout(aggregate_time_s)` compute delay.
+               (`fl_gather` packets, carrying `aggregate_flops`).
+  aggregate  — the aggregator pod computes the merged model; service
+               time is governed by the pod's compute loop (Layer 3).
   broadcast  — the aggregator sends the merged model back to every
                worker (`fl_broadcast` packets).
 
@@ -68,10 +68,10 @@ class FederatedLearningWorkload(WorkloadGenerator):
                         aggregator,
                         profile.worker_model_size_bytes,
                         profile.gather_packet_type,
+                        flops_required=profile.aggregate_flops,
                         priority=profile.priority,
                     )
                 )
-            yield env.timeout(profile.aggregate_time_s)
             for worker in workers:
                 publish_packet(
                     self.create_packet(
