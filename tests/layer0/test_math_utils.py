@@ -3,8 +3,10 @@ from __future__ import annotations
 import math
 
 import numpy as np
+import pytest
 
 from skynetra.foundation.math_utils import (
+    EARTH_SIDEREAL_RATE_RAD_S,
     cartesian_to_spherical,
     circular_velocity_kms,
     free_space_path_loss_db,
@@ -13,9 +15,11 @@ from skynetra.foundation.math_utils import (
     kepler_eccentric_anomaly,
     kepler_period_s,
     orbital_elements_to_eci,
+    rotate_vector_z,
     rotation_matrix_x,
     rotation_matrix_y,
     rotation_matrix_z,
+    sidereal_angle_rad,
     spherical_to_cartesian,
 )
 
@@ -201,3 +205,39 @@ class TestFreeSpacePathLoss:
 
     def test_increases_with_frequency(self):
         assert free_space_path_loss_db(1.0, 2e9) > free_space_path_loss_db(1.0, 1e9)
+
+
+class TestEarthRotation:
+    def test_rotate_vector_z_preserves_length_and_z(self):
+        v = (1.0, 2.0, 3.0)
+        rotated = rotate_vector_z(v, 0.7)
+        assert rotated[2] == 3.0
+        assert math.sqrt(sum(c * c for c in rotated)) == pytest.approx(
+            math.sqrt(sum(c * c for c in v))
+        )
+
+    def test_rotate_vector_z_quarter_turn(self):
+        v = rotate_vector_z((1.0, 0.0, 0.0), math.pi / 2)
+        assert v[0] == pytest.approx(0.0, abs=1e-12)
+        assert v[1] == pytest.approx(1.0, abs=1e-12)
+        assert v[2] == pytest.approx(0.0, abs=1e-12)
+
+    def test_rotate_vector_z_zero_angle_is_identity(self):
+        v = (4.0, -5.0, 2.0)
+        assert rotate_vector_z(v, 0.0) == v
+
+    def test_sidereal_angle_full_sidereal_day(self):
+        sidereal_day_s = 2.0 * math.pi / EARTH_SIDEREAL_RATE_RAD_S
+        assert sidereal_angle_rad(sidereal_day_s) == pytest.approx(
+            2.0 * math.pi, rel=1e-9
+        )
+
+    def test_sidereal_angle_solar_day_is_361_degrees(self):
+        # A 24 h solar day is ~1.00274 sidereal days: the Earth sweeps
+        # ~361 deg, not 360.
+        assert sidereal_angle_rad(24 * 3600.0) == pytest.approx(6.30039, abs=1e-3)
+
+    def test_sidereal_angle_one_hour(self):
+        assert sidereal_angle_rad(3600.0) == pytest.approx(
+            math.radians(15.041), rel=1e-3
+        )

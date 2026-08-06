@@ -36,6 +36,7 @@ class PodConfig(BaseModel):
 
 class GroundStationConfig(BaseModel):
     n_ground_stations: int = 1
+    gsl_elevation_min_deg: float = 10.0
 
 
 class NetworkConfig(BaseModel):

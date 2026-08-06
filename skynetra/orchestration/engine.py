@@ -48,6 +48,7 @@ from skynetra.engines.routing.registry import get_routing_engine
 from skynetra.engines.workload.interface import WorkloadGenerator
 from skynetra.engines.workload.registry import build_workloads
 from skynetra.foundation.eventbus import EventBus
+from skynetra.foundation.math_utils import rotate_vector_z, sidereal_angle_rad
 from skynetra.foundation.types import LinkId, NodeId, Vector3
 from skynetra.orchestration.context import SimulationContext
 from skynetra.orchestration.events import (
@@ -97,6 +98,7 @@ class SkyNetraSimulation:
         physics_tick_interval_s: float = 1.0
         isl_capacity_gbps: float = 100.0
         gsl_capacity_gbps: float = 10.0
+        gsl_elevation_min_deg: float = 10.0
         seed: int = 42
 
     def __init__(
@@ -112,6 +114,7 @@ class SkyNetraSimulation:
         physics_tick_interval_s: float = 1.0,
         isl_capacity_gbps: float = 100.0,
         gsl_capacity_gbps: float = 10.0,
+        gsl_elevation_min_deg: float = 10.0,
         seed: int = 42,
         debug_routing: bool = False,
     ) -> None:
@@ -127,10 +130,12 @@ class SkyNetraSimulation:
         self._physics_tick_interval_s = physics_tick_interval_s
         self._isl_capacity_gbps = isl_capacity_gbps
         self._gsl_capacity_gbps = gsl_capacity_gbps
+        self._gsl_elevation_min_deg = gsl_elevation_min_deg
         self._seed = seed
         self._debug_routing = debug_routing
         self._context: SimulationContext | None = None
         self._event_log: list[SimulationEvent] = []
+        self._initial_station_positions: dict[NodeId, Vector3] | None = None
 
     # ------------------------------------------------------------------
     # Constructors
@@ -163,6 +168,7 @@ class SkyNetraSimulation:
             physics_tick_interval_s=spec.physics_tick_interval_s,
             isl_capacity_gbps=spec.isl_capacity_gbps,
             gsl_capacity_gbps=spec.gsl_capacity_gbps,
+            gsl_elevation_min_deg=spec.gsl_elevation_min_deg,
             seed=spec.seed,
         )
 
@@ -180,6 +186,7 @@ class SkyNetraSimulation:
         physics_tick_interval_s: float = 1.0,
         isl_capacity_gbps: float = 100.0,
         gsl_capacity_gbps: float = 10.0,
+        gsl_elevation_min_deg: float = 10.0,
         seed: int = 42,
     ) -> OrbitDCSimulation:
         """Build a simulation from caller-provided Layer 1/2 objects."""
@@ -195,6 +202,7 @@ class SkyNetraSimulation:
             physics_tick_interval_s=physics_tick_interval_s,
             isl_capacity_gbps=isl_capacity_gbps,
             gsl_capacity_gbps=gsl_capacity_gbps,
+            gsl_elevation_min_deg=gsl_elevation_min_deg,
             seed=seed,
         )
 
@@ -215,6 +223,11 @@ class SkyNetraSimulation:
         """Assemble the live `SimulationContext` (idempotent)."""
         if self._context is not None:
             return self._context
+
+        if self._initial_station_positions is None:
+            self._initial_station_positions = self._initial_station_positions_for(
+                self._node_registry
+            )
 
         env = simpy.Environment()
         event_bus = EventBus()
@@ -296,10 +309,19 @@ class SkyNetraSimulation:
 
         pod_ids = [nid for nid, n in node_registry.items() if n.node_type == "pod"]
         gs_ids = [nid for nid, n in node_registry.items() if n.node_type == "ground"]
-        gs_positions = {
-            gs_id: self._ground_station_position(index, len(gs_ids))
-            for index, gs_id in enumerate(gs_ids)
+        # Ground stations (and pods, modeled as co-located ground-like
+        # facilities) are Earth-fixed: rotate their initial inertial
+        # positions by the sidereal angle at `time_s`.
+        rotation_rad = sidereal_angle_rad(time_s)
+        if self._initial_station_positions is None:
+            self._initial_station_positions = self._initial_station_positions_for(
+                node_registry
+            )
+        station_positions = {
+            nid: rotate_vector_z(pos, rotation_rad)
+            for nid, pos in self._initial_station_positions.items()
         }
+        gs_positions = {nid: station_positions[nid] for nid in gs_ids}
 
         graph = build_topology_graph(
             sat_positions=sat_positions,
@@ -308,12 +330,13 @@ class SkyNetraSimulation:
             ground_stations=gs_positions,
             link_capacity_gbps=self._isl_capacity_gbps,
             gsl_capacity_gbps=self._gsl_capacity_gbps,
+            gsl_elevation_min_deg=self._gsl_elevation_min_deg,
         )
         self._attach_pod_edges(
             graph,
             pod_ids,
             sat_positions,
-            gs_positions,
+            station_positions,
             capacity_gbps=self._gsl_capacity_gbps,
         )
         return graph
@@ -344,7 +367,8 @@ class SkyNetraSimulation:
         return sorted(links)
 
     @staticmethod
-    def _ground_station_position(index: int, count: int) -> Vector3:
+    def _station_position(index: int, count: int) -> Vector3:
+        """Initial Earth-fixed position of station `index` of `count`."""
         angle = 2.0 * math.pi * index / max(count, 1)
         return (
             EARTH_RADIUS_KM * math.cos(angle),
@@ -352,19 +376,38 @@ class SkyNetraSimulation:
             0.0,
         )
 
+    def _initial_station_positions_for(
+        self, node_registry: dict[NodeId, Node]
+    ) -> dict[NodeId, Vector3]:
+        """Earth-fixed initial positions of every ground station and pod.
+
+        Computed once per node registry (deterministic); `_build_graph`
+        rotates these into the inertial frame at each topology update.
+        Pods and ground stations are each indexed by their own type so
+        placement matches the pre-rotation geometry at t=0.
+        """
+        positions: dict[NodeId, Vector3] = {}
+        pods = [nid for nid, n in node_registry.items() if n.node_type == "pod"]
+        for index, nid in enumerate(pods):
+            positions[nid] = self._station_position(index, max(len(pods), 1))
+        gs = [nid for nid, n in node_registry.items() if n.node_type == "ground"]
+        for index, nid in enumerate(gs):
+            positions[nid] = self._station_position(index, max(len(gs), 1))
+        return positions
+
     @staticmethod
     def _attach_pod_edges(
         graph: nx.DiGraph,
         pod_ids: list[NodeId],
         sat_positions: dict[NodeId, Vector3],
-        gs_positions: dict[NodeId, Vector3],
+        pod_positions: dict[NodeId, Vector3],
         nearest: int = POD_ATTACH_NEAREST_SATS,
         capacity_gbps: float = 10.0,
     ) -> None:
         """Attach each pod to its `nearest` satellites (pods have no
         incident edges in the Layer 1 graph builder)."""
-        for index, pod_id in enumerate(pod_ids):
-            pod_pos = OrbitDCSimulation._ground_station_position(index, max(len(pod_ids), 1))
+        for pod_id in pod_ids:
+            pod_pos = pod_positions[pod_id]
             ranked = sorted(
                 sat_positions.items(),
                 key=lambda item: math.dist(pod_pos, item[1]),

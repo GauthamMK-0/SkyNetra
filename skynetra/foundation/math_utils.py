@@ -17,6 +17,26 @@ Vector3 = tuple[float, float, float]
 EARTH_RADIUS_KM = 6371.0
 EARTH_MU_KM3_S2 = 3.986004418e5
 
+# Earth's sidereal rotation rate (rad/s): 360.9856 deg per day.
+EARTH_SIDEREAL_RATE_RAD_S = 7.2921159e-5
+
+
+def sidereal_angle_rad(time_s: float) -> float:
+    """Earth's rotation angle about the polar axis at `time_s`, in rad."""
+    return time_s * EARTH_SIDEREAL_RATE_RAD_S
+
+
+def rotate_vector_z(v: Vector3, angle_rad: float) -> Vector3:
+    """Rotate `v` by `angle_rad` about the z (polar) axis, right-handed.
+
+    Preserves vector length; the z component is unchanged. Used to move
+    Earth-fixed positions (ground stations) into the inertial frame at a
+    simulation time.
+    """
+    x, y, z = v
+    c, s = math.cos(angle_rad), math.sin(angle_rad)
+    return (x * c - y * s, x * s + y * c, z)
+
 
 def kepler_eccentric_anomaly(
     mean_anomaly: float, eccentricity: float, tol: float = 1e-12, max_iter: int = 100

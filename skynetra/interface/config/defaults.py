@@ -111,5 +111,6 @@ def config_to_simulation_spec(
         physics_tick_interval_s=config.simulation.physics_tick_interval_s,
         isl_capacity_gbps=config.network.isl_capacity_gbps,
         gsl_capacity_gbps=config.network.gsl_capacity_gbps,
+        gsl_elevation_min_deg=config.ground_stations.gsl_elevation_min_deg,
         seed=config.simulation.seed,
     )
