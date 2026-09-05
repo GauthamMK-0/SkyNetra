@@ -174,9 +174,10 @@ class Node(ABC):
         return True
 
     def _publish(self, event_type: str, payload: dict[str, Any]) -> None:
-        self._event_bus.publish(
-            NodeEvent(node_id=self._node_id, event_type=event_type, payload=payload)
-        )
+        if self._event_bus.has_subscribers(NodeEvent):
+            self._event_bus.publish(
+                NodeEvent(node_id=self._node_id, event_type=event_type, payload=payload)
+            )
 
     @abstractmethod
     def process_packet(self, packet: Packet) -> bool:

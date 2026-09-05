@@ -259,3 +259,21 @@ def test_subscribed_handlers_executed_exactly_once():
     bus.publish(SampleEvent())
     bus.publish(SampleEvent())
     assert n[0] == 2
+
+
+def test_has_subscribers():
+    bus = EventBus()
+    assert not bus.has_subscribers()
+    assert not bus.has_subscribers(SampleEvent)
+
+    def handler(ev: SampleEvent) -> None:
+        pass
+
+    bus.subscribe(SampleEvent, handler)
+    assert bus.has_subscribers()
+    assert bus.has_subscribers(SampleEvent)
+    assert not bus.has_subscribers(OtherEvent)
+
+    bus.unsubscribe(SampleEvent, handler)
+    assert not bus.has_subscribers()
+    assert not bus.has_subscribers(SampleEvent)

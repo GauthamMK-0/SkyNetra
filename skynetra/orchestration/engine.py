@@ -24,10 +24,12 @@ May import from: itself, orchestration, engines, domain, foundation.
 
 from __future__ import annotations
 
+import heapq
 import math
 import random
+from collections.abc import Generator
 from dataclasses import dataclass, field
-from typing import Any, Generator
+from typing import Any
 
 import networkx as nx
 import simpy
@@ -40,7 +42,7 @@ from skynetra.domain.orbit.constellation import ConstellationConfig
 from skynetra.domain.orbit.propagator import PropagatorInterface, ReferenceCircularPropagator
 from skynetra.domain.packets.packet import Packet
 from skynetra.domain.topology.graph import build_topology_graph
-from skynetra.domain.topology.isl import EARTH_RADIUS_KM, compute_isl_link_quality
+from skynetra.domain.topology.isl import compute_isl_link_quality
 from skynetra.engines.physics.orchestrator import PhysicsOrchestrator
 from skynetra.engines.physics.registry import build_physics_models
 from skynetra.engines.routing.interface import RoutingEngine
@@ -48,7 +50,7 @@ from skynetra.engines.routing.registry import get_routing_engine
 from skynetra.engines.workload.interface import WorkloadGenerator
 from skynetra.engines.workload.registry import build_workloads
 from skynetra.foundation.eventbus import EventBus
-from skynetra.foundation.math_utils import rotate_vector_z, sidereal_angle_rad
+from skynetra.foundation.math_utils import EARTH_RADIUS_KM, rotate_vector_z, sidereal_angle_rad
 from skynetra.foundation.types import LinkId, NodeId, Vector3
 from skynetra.orchestration.context import SimulationContext
 from skynetra.orchestration.events import (
@@ -146,6 +148,7 @@ class SkyNetraSimulation:
         self._context: SimulationContext | None = None
         self._event_log: list[SimulationEvent] = []
         self._initial_station_positions: dict[NodeId, Vector3] | None = None
+        self._cached_isl_links: list[tuple[NodeId, NodeId]] | None = None
 
     # ------------------------------------------------------------------
     # Constructors
@@ -339,9 +342,12 @@ class SkyNetraSimulation:
         }
         gs_positions = {nid: station_positions[nid] for nid in gs_ids}
 
+        if self._cached_isl_links is None:
+            self._cached_isl_links = self._isl_links(sat_ids, self._constellation)
+
         graph = build_topology_graph(
             sat_positions=sat_positions,
-            isl_links=self._isl_links(sat_ids, self._constellation),
+            isl_links=self._cached_isl_links,
             pod_ids=pod_ids,
             ground_stations=gs_positions,
             link_capacity_gbps=self._isl_capacity_gbps,
@@ -368,7 +374,7 @@ class SkyNetraSimulation:
         planes = constellation.n_planes
         sats_per_plane = constellation.sats_per_plane
         if len(sat_ids) != planes * sats_per_plane:
-            return list(zip(sat_ids, sat_ids[1:] + sat_ids[:1]))
+            return list(zip(sat_ids, sat_ids[1:] + sat_ids[:1], strict=False))
         links: set[tuple[NodeId, NodeId]] = set()
         for plane in range(planes):
             for sat in range(sats_per_plane):
@@ -425,12 +431,11 @@ class SkyNetraSimulation:
         incident edges in the Layer 1 graph builder)."""
         for pod_id in pod_ids:
             pod_pos = pod_positions[pod_id]
-            ranked = sorted(
-                sat_positions.items(),
-                key=lambda item: math.dist(pod_pos, item[1]),
-            )
-            for sat_id, sat_pos in ranked[:nearest]:
-                distance_km = math.dist(pod_pos, sat_pos)
+            dist_pairs = [
+                (math.dist(pod_pos, sat_pos), sat_id, sat_pos)
+                for sat_id, sat_pos in sat_positions.items()
+            ]
+            for distance_km, sat_id, sat_pos in heapq.nsmallest(nearest, dist_pairs):
                 quality = compute_isl_link_quality(pod_pos, sat_pos, distance_km)
                 quality["capacity"] = capacity_gbps
                 graph.add_edge(pod_id, sat_id, **quality)
@@ -795,12 +800,11 @@ class SkyNetraSimulation:
 
     def _publish(self, context: SimulationContext, event: SimulationEvent) -> None:
         context.event_bus.publish(event)
-        if self._record_events:
-            if (
-                self._max_event_log_size is None
-                or len(self._event_log) < self._max_event_log_size
-            ):
-                self._event_log.append(event)
+        if self._record_events and (
+            self._max_event_log_size is None
+            or len(self._event_log) < self._max_event_log_size
+        ):
+            self._event_log.append(event)
 
 
 OrbitDCSimulation = SkyNetraSimulation

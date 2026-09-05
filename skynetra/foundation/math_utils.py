@@ -7,7 +7,6 @@ May import from: itself only.
 from __future__ import annotations
 
 import math
-from typing import Tuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -135,7 +134,7 @@ def spherical_to_cartesian(
 
 def cartesian_to_spherical(
     x: float, y: float, z: float
-) -> Tuple[float, float, float]:
+) -> tuple[float, float, float]:
     r = math.sqrt(x * x + y * y + z * z)
     theta = math.acos(z / r) if r > 0 else 0.0
     phi = math.atan2(y, x)

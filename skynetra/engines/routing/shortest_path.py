@@ -65,13 +65,23 @@ class ShortestPathRouter(RoutingEngine):
     ) -> NodeId | None:
         if current_node_id == packet.dst:
             return None
+
+        # Fast path: precomputed table lookup when no overrides and candidate is operational
+        if not weight_overrides:
+            current_node = node_registry.get(current_node_id)
+            if current_node is not None and not current_node.is_operational():
+                return None
+            next_hop = self._next_hop.get(current_node_id, {}).get(packet.dst)
+            if next_hop is not None:
+                next_node = node_registry.get(next_hop)
+                if (
+                    next_node is None or next_node.is_operational()
+                ) and graph.has_edge(current_node_id, next_hop):
+                    return next_hop
+
         operational_graph = self.filter_operational_nodes(graph, node_registry)
         if current_node_id not in operational_graph:
             return None
-        if not weight_overrides:
-            next_hop = self._next_hop.get(current_node_id, {}).get(packet.dst)
-            if next_hop is not None and operational_graph.has_node(next_hop):
-                return next_hop
         return self._dijkstra_next_hop(
             operational_graph, current_node_id, packet.dst, weight_overrides
         )

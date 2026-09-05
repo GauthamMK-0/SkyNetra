@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict
-
 import pytest
 
 from skynetra.domain.orbit.constellation import ConstellationConfig
@@ -45,7 +43,7 @@ def sample_packet() -> Packet:
 
 
 @pytest.fixture
-def node_positions() -> Dict[NodeId, Vector3]:
+def node_positions() -> dict[NodeId, Vector3]:
     return {
         NodeId("sat-1"): (7000.0, 0.0, 0.0),
         NodeId("sat-2"): (0.0, 7000.0, 0.0),

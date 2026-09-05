@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict
-
 from skynetra.domain.nodes.base import Node
 from skynetra.domain.nodes.ground import GroundStationNode
 from skynetra.domain.nodes.pod import PodNode
@@ -32,9 +30,9 @@ AI_TRAINING_SYNC_ONE_ROUND = AITrainingSyncWorkload(
 )
 
 
-def _build_registry(n_pods: int = 2, n_gs: int = 1) -> Dict[NodeId, Node]:
+def _build_registry(n_pods: int = 2, n_gs: int = 1) -> dict[NodeId, Node]:
     propagator = ReferenceCircularPropagator()
-    registry: Dict[NodeId, Node] = {
+    registry: dict[NodeId, Node] = {
         sat_id: RelayNode(sat_id) for sat_id in propagator.get_sat_ids(CONSTELLATION_3X6)
     }
     for index in range(1, n_pods + 1):

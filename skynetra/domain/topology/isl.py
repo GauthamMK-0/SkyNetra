@@ -24,7 +24,6 @@ from typing import Any
 from skynetra.foundation.types import Vector3
 
 SPEED_OF_LIGHT_KM_S = 299792.458
-EARTH_RADIUS_KM = 6371.0
 
 DEFAULT_LINK_QUALITY: dict[str, float] = {
     "capacity": 10.0,  # Gbps
@@ -34,8 +33,6 @@ DEFAULT_LINK_QUALITY: dict[str, float] = {
     "effective_capacity_fraction": 1.0,
     "doppler_shift_hz": 0.0,
 }
-
-LINK_QUALITY_SCHEMA = tuple(DEFAULT_LINK_QUALITY.keys())
 
 
 def compute_isl_link_quality(

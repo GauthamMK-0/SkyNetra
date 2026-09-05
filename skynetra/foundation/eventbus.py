@@ -2,7 +2,7 @@
 Foundation layer (L0) — generic typed event bus.
 
 A dependency-free publish/subscribe utility. It knows nothing about
-simulation events; layer3_orchestration defines the typed event
+simulation events; skynetra.orchestration defines the typed event
 dataclasses and this layer only provides the mechanism.
 
 May import from: itself only.
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterator, List, TypeVar, cast
+from typing import Any, Callable, Iterator, TypeVar, cast
 
 _logger = logging.getLogger(__name__)
 
@@ -35,7 +35,8 @@ class EventBus:
     """
 
     def __init__(self) -> None:
-        self._subscribers: Dict[type, List[_Subscriber]] = {}
+        self._subscribers: dict[type, list[_Subscriber]] = {}
+        self._dispatch_cache: dict[type, list[_Subscriber]] = {}
         self._seq_counter = 0
 
     def subscribe(
@@ -51,6 +52,7 @@ class EventBus:
         )
         self._seq_counter += 1
         self._subscribers.setdefault(event_type, []).append(entry)
+        self._dispatch_cache.clear()
 
     def unsubscribe(
         self, event_type: type[Any], callback: Callable[[Any], None]
@@ -63,19 +65,34 @@ class EventBus:
                 handlers.remove(entry)
         if not handlers:
             del self._subscribers[event_type]
+        self._dispatch_cache.clear()
+
+    def has_subscribers(self, event_type: type[Any] | None = None) -> bool:
+        """True if any subscriber is registered (globally or for `event_type`)."""
+        if event_type is None:
+            return bool(self._subscribers)
+        return bool(self._subscribers.get(event_type))
 
     def publish(self, event: Any) -> None:
-        candidates: List[_Subscriber] = []
-        for klass in type(event).__mro__:
-            handlers = self._subscribers.get(klass)
-            if handlers:
-                candidates.extend(handlers)
-        candidates.sort(key=lambda s: (s.priority, s.seq))
+        if not self._subscribers:
+            return
+        event_type = type(event)
+        candidates = self._dispatch_cache.get(event_type)
+        if candidates is None:
+            candidates_list: list[_Subscriber] = []
+            for klass in event_type.__mro__:
+                handlers = self._subscribers.get(klass)
+                if handlers:
+                    candidates_list.extend(handlers)
+            candidates_list.sort(key=lambda s: (s.priority, s.seq))
+            candidates = candidates_list
+            self._dispatch_cache[event_type] = candidates
+
         for entry in candidates:
             try:
                 entry.callback(event)
             except Exception:
-                _logger.exception("EventBus subscriber raised on %s", type(event).__name__)
+                _logger.exception("EventBus subscriber raised on %s", event_type.__name__)
 
     def publish_async(
         self, env: Any, event: Any, delay_s: float = 0.0
@@ -100,4 +117,5 @@ class EventBus:
 
     def clear(self) -> None:
         self._subscribers.clear()
+        self._dispatch_cache.clear()
         self._seq_counter = 0

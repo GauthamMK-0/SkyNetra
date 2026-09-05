@@ -60,6 +60,7 @@ class PhysicsOrchestrator:
         weight_overrides: dict[LinkId, float] = {}
         summary: dict[str, dict[str, Any]] = {}
 
+        edge_distances: dict[tuple[NodeId, NodeId], float] | None = None
         for model in self.models:
             for node_id, node in node_registry.items():
                 delta = model.compute_node_physics(
@@ -72,10 +73,14 @@ class PhysicsOrchestrator:
                 )
                 if delta:
                     node_updates.setdefault(node_id, {}).update(delta)
-            for node_a, node_b in graph.edges():
-                distance_km = self._edge_distance_km(
-                    graph, positions, node_a, node_b
-                )
+
+            if edge_distances is None:
+                edge_distances = {
+                    (u, v): self._edge_distance_km(graph, positions, u, v)
+                    for u, v in graph.edges()
+                }
+
+            for (node_a, node_b), distance_km in edge_distances.items():
                 delta = model.compute_link_physics(
                     node_a, node_b, distance_km, time_s, dt_s
                 )

@@ -59,7 +59,6 @@ version = {attr = "skynetra.__version__"}
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100

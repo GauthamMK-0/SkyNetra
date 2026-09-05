@@ -68,8 +68,7 @@ class PhysicsMetricsCollector(MetricsCollector):
             fault_probability = float(physics_state["fault_probability"])
 
             throttling = (
-                THERMAL_THROTTLE_THRESHOLD_K <= temperature_k
-                and temperature_k < TEMP_FAULT_THRESHOLD_K
+                THERMAL_THROTTLE_THRESHOLD_K <= temperature_k < TEMP_FAULT_THRESHOLD_K
             )
             radiation_faulted = (
                 fault_probability >= FAULT_PROBABILITY_THRESHOLD

@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 class MetricsCollector(ABC):
     """Layer 3 interface. Subscribes to EventBus events published during
-    the simulation loop (events defined in layer3_orchestration.events).
+    the simulation loop (events defined in skynetra.orchestration.events).
     Unlike Layer 2 engines, MetricsCollectors are allowed to depend on
     Layer 3's own event types since they live in the same layer."""
 
@@ -45,7 +45,7 @@ class MetricsCollector(ABC):
         """Accumulated metrics as a plain dict."""
 
     @abstractmethod
-    def to_dataframe(self) -> "pd.DataFrame":
+    def to_dataframe(self) -> pd.DataFrame:
         """Summary as a single-row pandas DataFrame."""
 
     def reset(self) -> None:

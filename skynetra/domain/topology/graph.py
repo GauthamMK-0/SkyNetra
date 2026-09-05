@@ -53,16 +53,6 @@ DEFAULT_NODE_ATTRIBUTES: dict[str, float] = {
     "fault_probability": 0.0,
 }
 
-NODE_SCHEMA = ("position", "node_type") + tuple(DEFAULT_NODE_ATTRIBUTES.keys())
-EDGE_SCHEMA = (
-    "capacity",
-    "propagation_delay_ms",
-    "thermal_noise_factor",
-    "radiation_bit_error_rate",
-    "effective_capacity_fraction",
-    "doppler_shift_hz",
-)
-
 
 def _default_edge_attributes(
     pos_a: Vector3, pos_b: Vector3, capacity_gbps: float

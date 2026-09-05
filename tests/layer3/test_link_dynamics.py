@@ -158,7 +158,7 @@ class TestQueueDrain:
         sim = _sim([workload], sim_duration_s=10.0)
         sim.run()
 
-        for node_id, node in sim.setup().node_registry.items():
+        for node in sim.setup().node_registry.values():
             if isinstance(node, RelayNode):
                 assert node.get_queue_depth() == 0
                 assert node.get_utilization() == 0.0
