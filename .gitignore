@@ -44,6 +44,7 @@ results/*.json
 SESSION_HISTORY.md
 IMPLEMENTATION.md
 implementation.md
+LAYER_API_STABILITY.md
 
 # Local working notes and plans
 local/
