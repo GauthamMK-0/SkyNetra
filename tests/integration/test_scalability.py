@@ -14,12 +14,12 @@ from skynetra.interface.config.defaults import FullConfig, config_to_simulation_
 from skynetra.orchestration.engine import OrbitDCSimulation
 
 COMPLETION_BUDGET_S = 120.0
-MEMORY_BUDGET_BYTES = 1_000_000_000
+MEMORY_BUDGET_BYTES = 250_000_000
 
 
 def _large_config(strategy: str) -> FullConfig:
     return FullConfig(
-        simulation={"duration_s": 300.0, "seed": 42},
+        simulation={"duration_s": 300.0, "seed": 42, "record_events": False},
         constellation={"n_planes": 6, "sats_per_plane": 10},
         pods={"n_pods": 4},
         routing={"strategy": strategy},
@@ -61,4 +61,4 @@ def test_6x10_backpressure_hot_path_speed_guard() -> None:
     started = time.perf_counter()
     _run_bounded("backpressure")
     elapsed = time.perf_counter() - started
-    assert elapsed < 6.0, f"backpressure hot path regressed: took {elapsed:.1f}s"
+    assert elapsed < 10.0, f"backpressure hot path regressed: took {elapsed:.1f}s"

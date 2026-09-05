@@ -104,6 +104,8 @@ class SkyNetraSimulation:
         gsl_capacity_gbps: float = 10.0
         gsl_elevation_min_deg: float = 10.0
         seed: int = 42
+        record_events: bool = True
+        max_event_log_size: int | None = None
 
     def __init__(
         self,
@@ -121,6 +123,8 @@ class SkyNetraSimulation:
         gsl_elevation_min_deg: float = 10.0,
         seed: int = 42,
         debug_routing: bool = False,
+        record_events: bool = True,
+        max_event_log_size: int | None = None,
     ) -> None:
         self._constellation = constellation
         self._propagator: PropagatorInterface = ReferenceCircularPropagator()
@@ -137,6 +141,8 @@ class SkyNetraSimulation:
         self._gsl_elevation_min_deg = gsl_elevation_min_deg
         self._seed = seed
         self._debug_routing = debug_routing
+        self._record_events = record_events
+        self._max_event_log_size = max_event_log_size
         self._context: SimulationContext | None = None
         self._event_log: list[SimulationEvent] = []
         self._initial_station_positions: dict[NodeId, Vector3] | None = None
@@ -174,6 +180,8 @@ class SkyNetraSimulation:
             gsl_capacity_gbps=spec.gsl_capacity_gbps,
             gsl_elevation_min_deg=spec.gsl_elevation_min_deg,
             seed=spec.seed,
+            record_events=spec.record_events,
+            max_event_log_size=spec.max_event_log_size,
         )
 
     @classmethod
@@ -192,6 +200,8 @@ class SkyNetraSimulation:
         gsl_capacity_gbps: float = 10.0,
         gsl_elevation_min_deg: float = 10.0,
         seed: int = 42,
+        record_events: bool = True,
+        max_event_log_size: int | None = None,
     ) -> OrbitDCSimulation:
         """Build a simulation from caller-provided Layer 1/2 objects."""
         return cls(
@@ -208,6 +218,8 @@ class SkyNetraSimulation:
             gsl_capacity_gbps=gsl_capacity_gbps,
             gsl_elevation_min_deg=gsl_elevation_min_deg,
             seed=seed,
+            record_events=record_events,
+            max_event_log_size=max_event_log_size,
         )
 
     @staticmethod
@@ -783,7 +795,12 @@ class SkyNetraSimulation:
 
     def _publish(self, context: SimulationContext, event: SimulationEvent) -> None:
         context.event_bus.publish(event)
-        self._event_log.append(event)
+        if self._record_events:
+            if (
+                self._max_event_log_size is None
+                or len(self._event_log) < self._max_event_log_size
+            ):
+                self._event_log.append(event)
 
 
 OrbitDCSimulation = SkyNetraSimulation

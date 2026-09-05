@@ -19,6 +19,7 @@ class SimulationConfig(BaseModel):
     seed: int = 42
     topology_update_interval_s: float = 10.0
     physics_tick_interval_s: float = 1.0
+    record_events: bool = True
 
 
 class ConstellationConfigModel(BaseModel):

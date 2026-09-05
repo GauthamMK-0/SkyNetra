@@ -76,6 +76,7 @@ def apply_physics_mode(cfg: FullConfig, mode: str) -> None:
 
 def run_config(cfg: FullConfig) -> dict[str, float]:
     """Run one simulation for `cfg` and return headline metrics."""
+    cfg.simulation.record_events = False
     spec = config_to_simulation_spec(cfg)
     results = OrbitDCSimulation.from_spec(spec).run()
     net = results.engine_metrics["network_metrics"]
