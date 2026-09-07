@@ -9,6 +9,7 @@ rebuilt against the current Layer 1 domain contract.
 
 from __future__ import annotations
 
+from skynetra.interface.api import simulate
 from skynetra.interface.config.schema import FullConfig
 from skynetra.orchestration.engine import OrbitDCSimulation
 from skynetra.orchestration.engine import OrbitDCSimulation as SkyNetraSimulation
@@ -18,6 +19,7 @@ __version__ = "0.1.0.dev0"
 
 __all__ = [
     "__version__",
+    "simulate",
     "OrbitDCSimulation",
     "SkyNetraSimulation",
     "FullConfig",

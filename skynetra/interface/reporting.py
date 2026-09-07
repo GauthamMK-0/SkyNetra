@@ -85,7 +85,7 @@ def print_comparison_table(a: SimulationResults, b: SimulationResults) -> None:
             )
 
 
-def save_all_plots(results: SimulationResults, output_dir: str) -> None:
+def save_all_plots(results: SimulationResults, output_dir: str) -> list[Path]:
     """Render every single-run viz plot to `output_dir/{name}.png`.
 
     The scaling plots (multi-run aggregates) and the orbit/ISL plot
@@ -94,7 +94,16 @@ def save_all_plots(results: SimulationResults, output_dir: str) -> None:
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
+    generated: list[Path] = []
     for plot_fn in _PLOT_FUNCTIONS:
         fig = plot_fn(results)
-        fig.savefig(out / f"{plot_fn.__name__}.png")
+        path = out / f"{plot_fn.__name__}.png"
+        fig.savefig(path)
         plt.close(fig)
+        generated.append(path)
+    return generated
+
+
+# Register plotter implementation into SimulationResults (Dependency Injection)
+SimulationResults.register_plotter(save_all_plots)
+
