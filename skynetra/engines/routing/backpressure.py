@@ -177,32 +177,55 @@ class BackPressureRouter(RoutingEngine):
                 candidates = non_pods
         if len(packet.path_history) >= 2:
             previous = packet.path_history[-2]
-            others = [c for c in candidates if str(c) != previous]
+            others = [c for c in candidates if c != previous]
             if others:
                 candidates = others
         visited = set(packet.path_history)
-        fresh = [c for c in candidates if str(c) not in visited]
+        fresh = [c for c in candidates if c not in visited]
         if fresh:
             candidates = fresh
-        def total_weight(v: NodeId) -> float:
-            base = self.get_edge_weight(
-                decision_graph, current_node_id, v, node_registry, None
-            )
-            penalty = self.physics_penalty(current_node_id, v, weight_overrides)
-            return (
-                self._params.alpha * base
-                + self._params.beta * 1.0
-                + self._params.gamma * self._queue_pressure(v, node_registry)
-                + self._params.delta * self._compute_backlog(v, node_registry)
-                + self._params.epsilon * penalty
-            )
 
-        # Tie-break toward the destination so that equal-weight loads
-        # cannot lock packets into closed rings.
-        def rank(v: NodeId) -> tuple[float, int]:
-            return total_weight(v), hop_distances[v].get(dst, 10**6)
+        if len(candidates) <= 1:
+            return candidates[0] if candidates else None
 
-        return min(candidates, key=rank)
+        params = self._params
+        alpha = params.alpha
+        beta_cost = params.beta * 1.0
+        gamma = params.gamma
+        delta = params.delta
+        epsilon = params.epsilon
+
+        best_candidate: NodeId = candidates[0]
+        best_rank: tuple[float, int] = (float("inf"), 10**6)
+
+        for v in candidates:
+            base = float(decision_graph[current_node_id][v].get("propagation_delay_ms", 1.0))
+            penalty = (
+                self.physics_penalty(current_node_id, v, weight_overrides)
+                if (weight_overrides and epsilon != 0.0)
+                else 0.0
+            )
+            node = node_registry.get(v)
+            if node is None:
+                q_util = 0.0
+                q_depth = 0.0
+            else:
+                q_util = float(node.get_utilization())
+                q_depth = float(node.get_queue_depth()) if node.node_type == "pod" else 0.0
+
+            total_weight = (
+                alpha * base
+                + beta_cost
+                + gamma * q_util
+                + delta * q_depth
+                + epsilon * penalty
+            )
+            v_rank = (total_weight, hop_distances[v].get(dst, 10**6))
+            if v_rank < best_rank:
+                best_rank = v_rank
+                best_candidate = v
+
+        return best_candidate
 
     def physics_penalty(
         self,

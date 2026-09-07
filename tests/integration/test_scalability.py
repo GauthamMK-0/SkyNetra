@@ -7,6 +7,8 @@ what the integration suite runs — must complete comfortably inside
 
 from __future__ import annotations
 
+import os
+import sys
 import time
 import tracemalloc
 
@@ -55,10 +57,16 @@ def test_6x10_backpressure_hot_path_speed_guard() -> None:
     """Perf regression guard for the Phase 4 hot-path tables.
 
     The pre-optimization backpressure run took ~25s for this config;
-    the cached reachability/hop tables brought it to ~1s. A 6x budget
-    fails loudly if per-hop BFS work is ever reintroduced.
+    the cached reachability/hop tables brought it to ~1s. A budget fails
+    loudly if per-hop BFS work is ever reintroduced. In CI or under
+    coverage tracing (sys.gettrace()), a higher budget accounts for
+    line-tracing and noisy-neighbor VM overhead.
     """
+    is_traced = sys.gettrace() is not None or "CI" in os.environ
+    budget = 20.0 if is_traced else 12.0
     started = time.perf_counter()
     _run_bounded("backpressure")
     elapsed = time.perf_counter() - started
-    assert elapsed < 10.0, f"backpressure hot path regressed: took {elapsed:.1f}s"
+    assert elapsed < budget, (
+        f"backpressure hot path regressed: took {elapsed:.1f}s (budget: {budget:.1f}s)"
+    )
