@@ -19,8 +19,8 @@ SkyNetra is organised into five strictly ordered layers. A layer may import only
 | L0 | `NodeId`, `LinkId`, `Vector3`, `TimeSeconds`, exception classes, `EventBus`, `configure_logging`, Kepler/geometry math, sim-time conversion |
 | L1 | `ConstellationConfig`, `PropagatorInterface`, `build_topology_graph`, ISL visibility/link quality, `Node`/`RelayNode`/`PodNode`/`GroundStation`, `PhysicsState`, `MetricsState`, `Packet` |
 | L2 | `RoutingEngine` ABC, `ShortestPathRouter`, `BackPressureRouter`, `PhysicsModel` ABC, `ThermalModel`, `RadiationModel`, `PowerModel`, `DopplerModel`, `PhysicsOrchestrator`, `WorkloadGenerator` ABC, `AITrainingWorkload`, `InferenceWorkload`, `FederatedLearningWorkload`, `WorkloadProfile`, strategy registries |
-| L3 | `SkyNetraSimulation` (and `from_layers()`), `SimulationContext`, `SimulationResults`, typed event classes, `MetricsCollector` ABC, `MetricsAggregator`, built-in metric collectors |
-| L4 | `FullConfig`, `load_config`, `save_config`, `skynetra_cli`, `export_results`, `compare_runs`, viz functions |
+| L3 | `SkyNetraSimulation` (and `from_layers()`), `SimulationContext`, `SimulationResults` (with `.network`, `.compute`, `.physics`, `.topology`, `.report()`, `.plot()`), typed event classes, `MetricsCollector` ABC, `MetricsAggregator`, built-in metric collectors |
+| L4 | `simulate`, `FullConfig`, `load_config`, `save_config`, `skynetra_cli`, `export_results`, `compare_runs`, `save_all_plots`, viz functions |
 
 ## Strict Dependency Rule
 

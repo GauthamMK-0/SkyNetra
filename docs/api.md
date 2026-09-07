@@ -6,9 +6,10 @@ This page lists all public classes and functions exported from the `skynetra` pa
 
 | Name | Description |
 |------|-------------|
+| `simulate` | High-level 3-line entry point to configure and execute end-to-end simulations with sensible defaults |
 | `SkyNetraSimulation` | Main simulation class (`OrbitDCSimulation` alias); manages the SimPy event loop and coordinates all layers |
-| `FullConfig` | Pydantic v2 schema for complete simulation configuration |
-| `SimulationResults` | Dataclass holding aggregated metrics, events, and duration |
+| `FullConfig` | Pydantic v2 schema for complete, declarative simulation configuration |
+| `SimulationResults` | Dataclass holding metrics, events, and duration with typed accessors (`.network`, `.compute`, `.physics`, `.topology`), terminal dashboard formatting (`.report()`), and automated figure export (`.plot()`) |
 
 ---
 
@@ -185,6 +186,12 @@ This page lists all public classes and functions exported from the `skynetra` pa
 
 ## L4 — Interface (`skynetra.interface`)
 
+### High-Level API
+
+| Name | Description |
+|------|-------------|
+| `simulate` | One-call execution entry point with intuitive keyword arguments (`duration_s`, `constellation`, `pods`, `routing`, `workload`, `physics`) |
+
 ### Config
 
 | Name | Description |
@@ -210,6 +217,7 @@ This page lists all public classes and functions exported from the `skynetra` pa
 
 | Name | Description |
 |------|-------------|
+| `save_all_plots` | Generate and export all 7 publication-ready plots to an output directory |
 | `plot_network_topology` | Plot NetworkX graph with positions |
 | `plot_scaling_results` | Plot scaling-sweep results |
 | `plot_isl_connectivity` | Plot ISL connectivity matrix |

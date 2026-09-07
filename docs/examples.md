@@ -12,12 +12,15 @@ All examples are expressed as a Layer 4 `FullConfig` (translated with
 except the extension examples, which plug custom Layer 2/3 objects in at the
 `from_layers` constructor boundary.
 
+## `basic_run.py`
+
+**What it demonstrates:** The canonical getting-started tutorial showcasing both execution paradigms:
+- **Mode 1 (3-Line High-Level API)**: Runs `sn.simulate(duration_s=60.0, constellation="3x6", pods=2, routing="backpressure")`, calls `.report()` for formatted terminal telemetry, and `.plot()` for automated figure generation.
+- **Mode 2 (Advanced FullConfig)**: Explicitly constructs a `FullConfig` model with both `ai_training_sync` and `inference_query` workloads, thermal + radiation physics, runs via `OrbitDCSimulation.from_spec(spec).run()`, and demonstrates typed accessors (`results.network`, `results.compute`, `results.physics`, `results.topology`).
+
 ## `basic_relay_run.py`
 
-**What it demonstrates:** Minimal SkyNetra setup: a 1-plane × 3-satellite
-constellation with one ground station, shortest-path routing, no workloads,
-no physics. Prints the two default metric groups (`network_metrics`,
-`topology_metrics`).
+**What it demonstrates:** Ground Station $\to$ Satellite $\to$ Compute Pod relay. Demonstrates GSL access gating, ISL transit, and on-orbit task execution. Prints the two default metric groups (`network_metrics`, `topology_metrics`).
 
 Key steps:
 1. Build a `FullConfig` (small constellation, empty workload, reduced metrics)
@@ -28,12 +31,12 @@ Key steps:
 
 **What it demonstrates:** A full SDC scenario: 3×6 constellation, 4 compute
 pods, 1 ground station, thermal + radiation physics enabled, AI-training sync
-(500 MB all-reduce) plus inference workload, all four metric groups.
+(500 MB all-reduce) plus inference workload, all four metric groups, and exports 7 plots.
 
 Key steps:
 1. Declare every dimension of the scenario in `FullConfig`
 2. Enable physics sections (`thermal`, `radiation`) and their collector
-3. Run 120 s and inspect per-category `engine_metrics`
+3. Run 120 s, inspect per-category `engine_metrics`, and save plots via `save_all_plots`
 
 ## `sdc_backpressure.py`
 
@@ -42,6 +45,14 @@ Backpressure is genuinely load-adaptive: it reads live queue pressure and
 compute backlog per hop, never transits a pod, and refuses U-turns, so under
 light load it matches shortest-path delivery while exploring more hops
 (higher `transmitted`, higher latency) as queues build up.
+
+## `sdc_federated_learning.py`
+
+**What it demonstrates:** On-orbit 3-phase Federated Learning:
+1. **Worker Upload (Gather)**: Satellites send local model updates across ISLs to a designated aggregator pod.
+2. **Aggregator Fusion (Compute)**: Aggregator pod executes parameter averaging and aggregation tasks.
+3. **Model Broadcast**: Aggregated global parameters are broadcast back to participating satellites.
+Exports all 7 visualization figures showing FL convergence and pod compute latency.
 
 ## `scaling_sweep.py`
 

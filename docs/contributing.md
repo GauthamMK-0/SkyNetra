@@ -17,7 +17,7 @@ Internal development guidelines for the SkyNetra team.
 1. Create a feature/fix branch from `develop`
 2. Make changes, keeping commits small and logical
 3. Run all tests locally: `pytest`
-4. Run layer boundary checks: `import-linter .` and `pytest tests/layer_boundaries/`
+4. Run layer boundary checks: `import-linter lint` and `pytest tests/layer_boundaries/`
 5. Run linting: `ruff check .`
 6. Run type checking: `mypy skynetra`
 7. Open a pull request against `develop`
@@ -40,19 +40,20 @@ Existing test directory structure:
 
 | Directory | What It Tests |
 |-----------|---------------|
-| `tests/layer0/` | Foundation layer |
-| `tests/layer1/` | Domain layer |
-| `tests/layer2/` | Engine strategies |
-| `tests/layer4/` | Interface layer |
-| `tests/layer_boundaries/` | Import dependency enforcement |
-| `tests/integration/` | End-to-end simulations |
+| `tests/layer0/` | Foundation layer (types, errors, eventbus, math utils) |
+| `tests/layer1/` | Domain layer (nodes, packets, ISL/GSL topology) |
+| `tests/layer2/` | Engine strategies (routing, physics, workloads) |
+| `tests/layer3/` | Orchestration layer (SimPy engine, metrics, events, results) |
+| `tests/layer4/` | Interface layer (API, config schema, CLI, viz) |
+| `tests/layer_boundaries/` | Import dependency enforcement (AST scanner) |
+| `tests/integration/` | End-to-end simulations and scalability guards |
 
 ## Layer Boundary Enforcement
 
 Every PR must pass both checks:
 
 ```bash
-import-linter .
+import-linter lint
 pytest tests/layer_boundaries/
 ```
 
