@@ -103,38 +103,71 @@ def main() -> None:
     # -------------------------------------------------------------
     # Step 4: Inspect Results
     # -------------------------------------------------------------
-    print("\n================ SIMULATION RESULTS ================")
-    print(f"Wall-clock runtime completed for {results.duration:.1f} simulated seconds.")
-
-    # 4a. Network Metrics
     net = results.engine_metrics.get("network_metrics", {})
-    print("\n[Network Metrics]")
-    print(f"  Packets Transmitted : {net.get('transmitted', 0)}")
-    print(f"  Packets Delivered   : {net.get('delivered', 0)}")
-    print(f"  Packets Dropped     : {net.get('dropped', 0)}")
-    print(f"  Average Latency     : {net.get('avg_latency_s', 0.0) * 1000:.3f} ms")
-    print(f"  Drop Rate           : {net.get('drop_rate', 0.0) * 100:.2f}%")
-
-    # 4b. On-Orbit Compute Metrics
     comp = results.engine_metrics.get("compute_metrics", {})
-    print("\n[Compute Metrics]")
-    print(f"  Compute Tasks Finished : {comp.get('compute_jobs_completed', 0)}")
-    print(f"  Total FLOPS Accrued    : {comp.get('total_flops_computed', 0.0):.2e} FLOPS")
-    print(f"  Avg Compute Service Time: {comp.get('avg_compute_latency_s', 0.0) * 1000:.3f} ms")
-
-    # 4c. Space Physics Metrics
     phys = results.engine_metrics.get("physics_metrics", {})
-    print("\n[Physics Metrics]")
-    print(f"  Thermal Throttling Events : {phys.get('thermal_throttling_events', 0)}")
-    print(f"  Radiation Latchup Faults  : {phys.get('radiation_fault_events', 0)}")
-    print(f"  Average Node Temperature  : {phys.get('avg_temperature_k', 0.0):.2f} K")
+    top = results.engine_metrics.get("topology_metrics", {})
+
+    transmitted = net.get("transmitted", 0)
+    delivered = net.get("delivered", 0)
+    dropped = net.get("dropped", 0)
+    avg_latency_ms = net.get("avg_latency_s", 0.0) * 1000
+    loss_rate = net.get("drop_rate", 0.0) * 100
+    delivery_rate = (delivered / max(1, delivered + dropped)) * 100
+
+    print("\n" + "=" * 70)
+    print("                 SKYNETRA SIMULATION EXECUTION REPORT                 ")
+    print("=" * 70)
+    print("Scenario Configuration:")
+    print(f"  * Simulation Horizon  : {results.duration:.1f} simulated seconds")
+    print("  * Constellation Mesh  : Walker-Delta 3 planes x 6 satellites (18 total @ 550 km)")
+    print("  * On-Orbit Compute    : 2 Dedicated Accelerators (pod-1, pod-2)")
+    print("  * Terrestrial Segment : 1 Ground Station (gs-1, >= 10.0 deg elevation mask)")
+    print("  * Routing Policy      : Load-Adaptive Backpressure Routing")
+    print("  * Active Workloads    : AI Training Sync (All-Reduce) + Inference Queries")
+
+    print("\n[Network Forwarding & Delivery]")
+    print(f"  * Packets Injected/Transmitted : {transmitted} packets")
+    print(f"  * Successfully Received/Relayed: {delivered} packets")
+    print(f"  * Packets Dropped (Congestion) : {dropped} packets")
+    print(f"  * Mean End-to-End Latency      : {avg_latency_ms:.2f} ms")
+    print(f"  * Packet Loss Rate             : {loss_rate:.2f}%")
+    print(f"  * Delivery Completion Rate     : {delivery_rate:.2f}%")
+
+    print("\n[On-Orbit Compute Data Center Servicing]")
+    print(f"  * Compute Tasks Finished       : {comp.get('compute_jobs_completed', 0)} jobs")
+    comp_flops = comp.get('compute_flops_completed', 0.0)
+    print(f"  * Total FLOPs Accrued          : {comp_flops:.2e} FLOPS")
+    comp_lat_ms = comp.get('avg_compute_latency_s', 0.0) * 1000
+    print(f"  * Mean Compute Service Time    : {comp_lat_ms:.2f} ms")
+    jobs_by_pod = comp.get("jobs_by_pod", {})
+    if jobs_by_pod:
+        print("  * Per-Pod Task Distribution    :")
+        for pod_id, count in sorted(jobs_by_pod.items()):
+            pct = (count / max(1, delivered)) * 100
+            print(f"      - {pod_id:<8} : {count:>3} jobs ({pct:>5.1f}%)")
+
+    print("\n[Space Environment & Physics Models]")
+    active_models = phys.get('active_models', ['Thermal', 'Radiation', 'Power'])
+    print(f"  * Active Physics Models        : {active_models}")
+    print(f"  * Mean Radiative Core Temp     : {phys.get('avg_temperature', 0.0):.1f} K")
+    print(f"  * Thermal Throttle Incidents   : {phys.get('thermal_throttle_events', 0)}")
+    print(f"  * Radiation Latchup Faults     : {phys.get('radiation_fault_events', 0)}")
+    energy_j = phys.get('total_energy_consumed', 0.0)
+    print(f"  * Total Energy Consumed        : {energy_j:.2f} Joules")
+
+    print("\n[Constellation Topology & Mesh Evolution]")
+    print(f"  * Constellation Vertices       : {top.get('final_node_count', 0)} nodes")
+    print(f"  * Active Intersatellite Links  : {top.get('final_edge_count', 0)} links")
+    print(f"  * Topology Recomputations      : {top.get('topology_updates', 0)} updates")
 
     # -------------------------------------------------------------
     # Step 5: Save Visual Plots (PNGs)
     # -------------------------------------------------------------
     output_dir = Path("results/my_first_sim_plots")
     save_all_plots(results, str(output_dir))
-    print(f"\nCharts saved to: {output_dir}/")
+    print(f"\nVisualizations successfully generated and saved to: {output_dir}/")
+    print("=" * 70)
 
 
 if __name__ == "__main__":

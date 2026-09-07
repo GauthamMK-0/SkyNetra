@@ -73,36 +73,60 @@ def main() -> None:
     phys = results.engine_metrics.get("physics_metrics", {})
     top = results.engine_metrics.get("topology_metrics", {})
 
-    print("\n================ SDC BACKPRESSURE RESULTS ================")
-    print(f"Simulation Duration : {results.duration:.1f}s")
-    print(
-        f"Network Performance : transmitted={net.get('transmitted', 0)} | "
-        f"delivered={net.get('delivered', 0)} | "
-        f"dropped={net.get('dropped', 0)} | "
-        f"avg_latency={net.get('avg_latency_s', 0.0) * 1000:.2f} ms | "
-        f"drop_rate={net.get('drop_rate', 0.0) * 100:.2f}%"
-    )
-    print(
-        f"Compute Performance : jobs_completed={comp.get('compute_jobs_completed', 0)} | "
-        f"total_flops={comp.get('compute_flops_completed', 0.0):.2e} FLOPS | "
-        f"avg_service_time={comp.get('avg_compute_latency_s', 0.0) * 1000:.2f} ms | "
-        f"jobs_by_pod={comp.get('jobs_by_pod', {})}"
-    )
-    print(
-        f"Space Physics State : avg_temp={phys.get('avg_temperature', 0.0):.1f} K | "
-        f"throttling_events={phys.get('thermal_throttle_events', 0)} | "
-        f"radiation_faults={phys.get('radiation_fault_events', 0)} | "
-        f"active_models={phys.get('active_models', [])}"
-    )
-    print(
-        f"Constellation Graph : nodes={top.get('final_node_count', 0)} | "
-        f"edges={top.get('final_edge_count', 0)} | "
-        f"topology_updates={top.get('topology_updates', 0)}"
-    )
+    transmitted = net.get("transmitted", 0)
+    delivered = net.get("delivered", 0)
+    dropped = net.get("dropped", 0)
+    avg_latency_ms = net.get("avg_latency_s", 0.0) * 1000
+    loss_rate = net.get("drop_rate", 0.0) * 100
+    delivery_rate = (delivered / max(1, delivered + dropped)) * 100
+
+    print("\n" + "=" * 70)
+    print("                SDC BACKPRESSURE SIMULATION RESULTS                   ")
+    print("=" * 70)
+    print(f"Simulation Horizon : {results.duration:.1f} simulated seconds")
+    print("Constellation Mesh : Walker-Delta 3 planes x 6 satellites (18 total)")
+    print("Computing Nodes    : 4 On-Orbit Pods (pods 1-4)")
+    print("Routing Strategy   : Load-Adaptive Dynamic Backpressure")
+    print("Weights Configured : α=1.0 (delay), β=5.0 (hops), γ=50.0 (queue),")
+    print("                     δ=30.0 (compute backlog), ε=1.0 (space physics penalty)")
+    print("Active Workloads   : AI Training Sync (All-Reduce) + Inference Queries")
+
+    print("\n[Space Network Performance]")
+    print(f"  * Total Packets Injected/Transmitted : {transmitted}")
+    print(f"  * Total Packets Successfully Relayed : {delivered}")
+    print(f"  * Total Dropped Packets              : {dropped}")
+    print(f"  * Network Packet Loss Rate           : {loss_rate:.2f}%")
+    print(f"  * End-to-End Delivery Success Rate   : {delivery_rate:.2f}%")
+    print(f"  * Average End-to-End Latency         : {avg_latency_ms:.2f} ms")
+
+    print("\n[On-Orbit Space Data Center Compute Servicing]")
+    print(f"  * Total Compute Tasks Completed      : {comp.get('compute_jobs_completed', 0)} jobs")
+    comp_flops = comp.get('compute_flops_completed', 0.0)
+    print(f"  * Aggregate FLOPs Accrued Across SDC : {comp_flops:.2e} FLOPS")
+    comp_lat_ms = comp.get('avg_compute_latency_s', 0.0) * 1000
+    print(f"  * Mean Compute Task Service Time     : {comp_lat_ms:.2f} ms")
+    print("  * Pod Workload Distribution          :")
+    jobs_by_pod = comp.get("jobs_by_pod", {})
+    if jobs_by_pod:
+        for pod_id, count in sorted(jobs_by_pod.items()):
+            pct = (count / max(1, delivered)) * 100
+            print(f"      - {pod_id:<8} : {count:>3} jobs ({pct:>5.1f}%)")
+
+    print("\n[Space Environment & Physics Dynamics]")
+    print(f"  * Active Physics Models              : {phys.get('active_models', [])}")
+    print(f"  * Mean Core Radiative Temperature    : {phys.get('avg_temperature', 0.0):.1f} K")
+    print(f"  * Thermal Throttle Incidents         : {phys.get('thermal_throttle_events', 0)}")
+    print(f"  * Single Event Latchup (SEL) Faults  : {phys.get('radiation_fault_events', 0)}")
+
+    print("\n[Constellation Topology & Mesh Evolution]")
+    print(f"  * Constellation Vertices (Nodes)     : {top.get('final_node_count', 0)} nodes")
+    print(f"  * Active Intersatellite Links (ISLs) : {top.get('final_edge_count', 0)} links")
+    print(f"  * Periodic Topology Recomputations   : {top.get('topology_updates', 0)} ticks")
 
     plot_dir = Path("results/sdc_backpressure_plots")
     save_all_plots(results, str(plot_dir))
-    print(f"\nVisualizations saved to: {plot_dir}/")
+    print(f"\nVisualizations successfully generated and saved to: {plot_dir}/")
+    print("=" * 70)
 
 
 if __name__ == "__main__":

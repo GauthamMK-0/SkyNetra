@@ -54,33 +54,58 @@ def main() -> None:
     phys = results.engine_metrics.get("physics_metrics", {})
     top = results.engine_metrics.get("topology_metrics", {})
 
-    print("\n================ SDC FEDERATED LEARNING RESULTS ================")
-    print(f"Simulation Duration : {results.duration:.1f}s")
-    print(
-        f"Network Performance : transmitted={net.get('transmitted', 0)} | "
-        f"delivered={net.get('delivered', 0)} | "
-        f"dropped={net.get('dropped', 0)} | "
-        f"avg_latency={net.get('avg_latency_s', 0.0) * 1000:.2f} ms"
-    )
-    print(
-        f"Compute Performance : aggregation_jobs={comp.get('compute_jobs_completed', 0)} | "
-        f"total_flops={comp.get('compute_flops_completed', 0.0):.2e} FLOPS | "
-        f"jobs_by_pod={comp.get('jobs_by_pod', {})}"
-    )
-    print(
-        f"Space Physics State : avg_temp={phys.get('avg_temperature', 0.0):.1f} K | "
-        f"throttling_events={phys.get('thermal_throttle_events', 0)} | "
-        f"radiation_faults={phys.get('radiation_fault_events', 0)}"
-    )
-    print(
-        f"Constellation Graph : nodes={top.get('final_node_count', 0)} | "
-        f"edges={top.get('final_edge_count', 0)} | "
-        f"topology_updates={top.get('topology_updates', 0)}"
-    )
+    transmitted = net.get("transmitted", 0)
+    delivered = net.get("delivered", 0)
+    dropped = net.get("dropped", 0)
+    avg_latency_ms = net.get("avg_latency_s", 0.0) * 1000
+    loss_rate = (dropped / max(1, transmitted)) * 100
+    delivery_rate = (delivered / max(1, delivered + dropped)) * 100
+
+    print("\n" + "=" * 70)
+    print("            SDC FEDERATED LEARNING SIMULATION RESULTS                 ")
+    print("=" * 70)
+    print(f"Simulation Horizon : {results.duration:.1f} simulated seconds")
+    print("Constellation Mesh : Walker-Delta 3 planes x 6 satellites (18 total)")
+    print("Federated Clusters : 3 On-Orbit Compute Pods (Worker & Aggregator roles)")
+    print("Ground Stations    : 2 Earth-Fixed Stations (gs-1, gs-2)")
+    print("Training Protocol  : 3-Phase Synchronous FL (Gather -> Aggregate -> Broadcast)")
+    print("Workload Profile   : 5 Rounds @ 50.0s interval | 1.0 MB model weights")
+
+    print("\n[Federated Synchronization Network Metrics]")
+    print(f"  * Total Gradient/Model Packets : {transmitted}")
+    print(f"  * Successfully Received Models : {delivered}")
+    print(f"  * Dropped/Lost Parameter Packets: {dropped}")
+    print(f"  * Transmission Packet Loss Rate: {loss_rate:.2f}%")
+    print(f"  * Delivery Completion Rate     : {delivery_rate:.2f}%")
+    print(f"  * Mean Sync Transfer Latency   : {avg_latency_ms:.2f} ms")
+
+    print("\n[On-Orbit Model Fusion & Aggregation Compute]")
+    print(f"  * Aggregation Steps Finished   : {comp.get('compute_jobs_completed', 0)} jobs")
+    comp_flops = comp.get('compute_flops_completed', 0.0)
+    print(f"  * Model Parameter FLOPs Fused  : {comp_flops:.2e} FLOPS")
+    comp_lat_ms = comp.get('avg_compute_latency_s', 0.0) * 1000
+    print(f"  * Mean Parameter Fusion Time   : {comp_lat_ms:.2f} ms")
+    print("  * Aggregation Pod Distribution :")
+    jobs_by_pod = comp.get("jobs_by_pod", {})
+    if jobs_by_pod:
+        for pod_id, count in sorted(jobs_by_pod.items()):
+            pct = (count / max(1, delivered)) * 100
+            print(f"      - {pod_id:<8} : {count:>3} model merges ({pct:>5.1f}%)")
+
+    print("\n[Space Environment Dynamics]")
+    print(f"  * Mean SDC Thermal State       : {phys.get('avg_temperature', 0.0):.1f} K")
+    print(f"  * Thermal Throttle Occurrences : {phys.get('thermal_throttle_events', 0)} events")
+    print(f"  * Radiation Latchup Faults     : {phys.get('radiation_fault_events', 0)} events")
+
+    print("\n[Constellation Topology & Mesh Evolution]")
+    print(f"  * Constellation Vertices       : {top.get('final_node_count', 0)} nodes")
+    print(f"  * Active Intersatellite Links  : {top.get('final_edge_count', 0)} links")
+    print(f"  * Dynamic Route Recomputations : {top.get('topology_updates', 0)} ticks")
 
     plot_dir = Path("results/sdc_federated_learning_plots")
     save_all_plots(results, str(plot_dir))
-    print(f"\nVisualizations saved to: {plot_dir}/")
+    print(f"\nVisualizations successfully generated and saved to: {plot_dir}/")
+    print("=" * 70)
 
 
 if __name__ == "__main__":

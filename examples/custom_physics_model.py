@@ -75,28 +75,51 @@ def main() -> None:
         {"name": "solar_flare", "config": {"enabled": True, "flare_dose_rate": 0.5}}
     ]
 
+    print("Running Custom SolarFlareModel Simulation (60.0s)...")
     results = OrbitDCSimulation.from_spec(spec).run()
 
-    print(f"Custom SolarFlareModel Simulation ({results.duration:.1f}s):")
     net = results.engine_metrics.get("network_metrics", {})
     comp = results.engine_metrics.get("compute_metrics", {})
     phys = results.engine_metrics.get("physics_metrics", {})
 
-    print(
-        f"  Physics State   : active_models={phys.get('active_models')} | "
-        f"radiation_faults={phys.get('radiation_fault_events', 0)} | "
-        f"physics_drops={phys.get('physics_caused_drops', 0)}"
-    )
-    print(
-        f"  Network Metrics : transmitted={net.get('transmitted', 0)} | "
-        f"delivered={net.get('delivered', 0)} | "
-        f"dropped={net.get('dropped', 0)} | "
-        f"avg_latency={net.get('avg_latency_s', 0.0) * 1000:.2f} ms"
-    )
-    print(
-        f"  Compute Metrics : jobs_completed={comp.get('compute_jobs_completed', 0)} | "
-        f"total_flops={comp.get('compute_flops_completed', 0.0):.1e} FLOPS"
-    )
+    transmitted = net.get("transmitted", 0)
+    delivered = net.get("delivered", 0)
+    dropped = net.get("dropped", 0)
+    avg_latency_ms = net.get("avg_latency_s", 0.0) * 1000
+    loss_rate = (dropped / max(1, transmitted)) * 100
+    delivery_rate = (delivered / max(1, delivered + dropped)) * 100
+
+    print("\n" + "=" * 70)
+    print("                SKYNETRA CUSTOM PHYSICS MODEL REPORT                  ")
+    print("=" * 70)
+    print("Physics Extension Configuration:")
+    print("  * Active Plugin Model : SolarFlareModel (Custom Layer 2 Implementation)")
+    print("  * Solar Flare Event   : Active throughout simulation (60.0 simulated seconds)")
+    print("  * Flare Dose Rate     : 0.50 rad(Si)/s applied to all constellation nodes")
+    print("  * Injected Link BER   : 1.0e-04 optical bit error rate on all ISL/GSL channels")
+    print("  * Constellation Scale : 6 Satellites (2 planes x 3 sats), 2 Pods, 1 Ground Station")
+
+    print("\n[Space Environmental State & Degradation]")
+    print(f"  * Registered Physics Models    : {phys.get('active_models', ['SolarFlareModel'])}")
+    print(f"  * Single Event Latchup Faults  : {phys.get('radiation_fault_events', 0)} events")
+    print(f"  * Physics-Induced Link Drops   : {phys.get('physics_caused_drops', 0)} drops")
+    print(f"  * Thermal Throttle Events      : {phys.get('thermal_throttle_events', 0)} events")
+
+    print("\n[Degraded Space Network Performance]")
+    print(f"  * Packets Injected/Transmitted : {transmitted}")
+    print(f"  * Packets Successfully Received: {delivered}")
+    print(f"  * Total Lost/Dropped Packets   : {dropped}")
+    print(f"  * Network Packet Loss Rate     : {loss_rate:.2f}%")
+    print(f"  * Delivery Completion Rate     : {delivery_rate:.2f}%")
+    print(f"  * Mean End-to-End Latency      : {avg_latency_ms:.2f} ms")
+
+    print("\n[On-Orbit Compute Accelerator Servicing]")
+    print(f"  * Inference Tasks Finished     : {comp.get('compute_jobs_completed', 0)} tasks")
+    comp_flops = comp.get('compute_flops_completed', 0.0)
+    print(f"  * Total Compute FLOPs Accrued  : {comp_flops:.2e} FLOPS")
+    comp_lat_ms = comp.get('avg_compute_latency_s', 0.0) * 1000
+    print(f"  * Mean Task Service Time       : {comp_lat_ms:.2f} ms")
+    print("=" * 70)
 
 
 if __name__ == "__main__":
