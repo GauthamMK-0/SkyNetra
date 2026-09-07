@@ -30,10 +30,7 @@ output/
 site/
 
 # Regenerable run artifacts
-results/compare/
-results/*.png
-results/*.csv
-results/*.json
+results/
 
 # Secrets
 .env

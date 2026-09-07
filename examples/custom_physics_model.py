@@ -50,7 +50,7 @@ class SolarFlareModel(PhysicsModel):
         time_s: float,
         dt_s: float,
     ) -> dict[str, Any]:
-        return {}
+        return {"radiation_bit_error_rate": 1e-4}
 
     def name(self) -> str:
         return "solar_flare"
@@ -61,20 +61,42 @@ def main() -> None:
 
     config = FullConfig(
         simulation={"duration_s": 60.0, "seed": 42, "physics_tick_interval_s": 1.0},
-        constellation={"n_planes": 1, "sats_per_plane": 3},
-        pods={"n_pods": 0},
-        workload={"active": []},
-        metrics={"active": ["physics_metrics"]},
+        constellation={"n_planes": 2, "sats_per_plane": 3, "altitude_km": 550.0},
+        pods={"n_pods": 2},
+        ground_stations={"n_ground_stations": 1, "gsl_elevation_min_deg": 10.0},
+        workload={
+            "active": ["inference_query"],
+            "inference_query": {"mean_interval_s": 4.0, "flops_required": 1e9},
+        },
+        metrics={"active": ["network_metrics", "compute_metrics", "physics_metrics"]},
     )
     spec = config_to_simulation_spec(config)
     spec.physics_specs = [
-        {"name": "solar_flare", "config": {"enabled": True, "flare_dose_rate": 0.8}}
+        {"name": "solar_flare", "config": {"enabled": True, "flare_dose_rate": 0.5}}
     ]
 
     results = OrbitDCSimulation.from_spec(spec).run()
 
-    print(f"SolarFlareModel simulation: {results.duration}s")
-    print(f"Metrics: {results.engine_metrics}")
+    print(f"Custom SolarFlareModel Simulation ({results.duration:.1f}s):")
+    net = results.engine_metrics.get("network_metrics", {})
+    comp = results.engine_metrics.get("compute_metrics", {})
+    phys = results.engine_metrics.get("physics_metrics", {})
+
+    print(
+        f"  Physics State   : active_models={phys.get('active_models')} | "
+        f"radiation_faults={phys.get('radiation_fault_events', 0)} | "
+        f"physics_drops={phys.get('physics_caused_drops', 0)}"
+    )
+    print(
+        f"  Network Metrics : transmitted={net.get('transmitted', 0)} | "
+        f"delivered={net.get('delivered', 0)} | "
+        f"dropped={net.get('dropped', 0)} | "
+        f"avg_latency={net.get('avg_latency_s', 0.0) * 1000:.2f} ms"
+    )
+    print(
+        f"  Compute Metrics : jobs_completed={comp.get('compute_jobs_completed', 0)} | "
+        f"total_flops={comp.get('compute_flops_completed', 0.0):.1e} FLOPS"
+    )
 
 
 if __name__ == "__main__":

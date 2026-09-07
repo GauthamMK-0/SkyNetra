@@ -24,11 +24,18 @@ from skynetra.domain.orbit.propagator import ReferenceCircularPropagator
 from skynetra.domain.packets.packet import Packet
 from skynetra.engines.routing.interface import RoutingEngine
 from skynetra.engines.routing.registry import STRATEGIES
+from skynetra.engines.workload.inference import InferenceQueryWorkload
 from skynetra.foundation.types import LinkId, NodeId
 from skynetra.orchestration.engine import OrbitDCSimulation
 
 
 class SimpleHopRouter(RoutingEngine):
+    """Custom router: calculates unweighted minimum-hop paths via BFS."""
+
+    def __init__(self, config: dict | None = None) -> None:
+        super().__init__(config)
+        self.decisions_made = 0
+
     def update_topology(self, new_graph: nx.DiGraph) -> None:
         return None
 
@@ -42,6 +49,7 @@ class SimpleHopRouter(RoutingEngine):
     ) -> NodeId | None:
         if current_node_id == packet.dst:
             return None
+        self.decisions_made += 1
         try:
             route = nx.shortest_path(graph, source=current_node_id, target=packet.dst)
         except (nx.NetworkXNoPath, nx.NodeNotFound):
@@ -66,17 +74,41 @@ def main() -> None:
         node_registry[NodeId(f"pod-{i + 1}")] = PodNode(NodeId(f"pod-{i + 1}"))
     node_registry[NodeId("gs-1")] = GroundStationNode(NodeId("gs-1"))
 
+    # Active workload to exercise the custom routing algorithm
+    workload = InferenceQueryWorkload({
+        "mean_interval_s": 3.0,
+        "query_size_bytes": 512,
+        "flops_required": 1e9,
+        "seed": 42,
+    })
+
+    router = SimpleHopRouter()
+
     sim = OrbitDCSimulation.from_layers(
         constellation=constellation,
         node_registry=node_registry,
-        routing_engine=SimpleHopRouter(),
-        sim_duration_s=30.0,
+        routing_engine=router,
+        workloads=[workload],
+        sim_duration_s=60.0,
         seed=42,
     )
     results = sim.run()
 
-    print(f"Custom SimpleHopRouter simulation: {results.duration}s")
-    print(f"Metrics: {results.engine_metrics}")
+    print(f"Custom SimpleHopRouter Simulation ({results.duration:.1f}s):")
+    net = results.engine_metrics.get("network_metrics", {})
+    comp = results.engine_metrics.get("compute_metrics", {})
+
+    print(f"  Routing Decisions : {router.decisions_made} hop calculations")
+    print(
+        f"  Network Metrics   : transmitted={net.get('transmitted', 0)} | "
+        f"delivered={net.get('delivered', 0)} | "
+        f"dropped={net.get('dropped', 0)} | "
+        f"avg_latency={net.get('avg_latency_s', 0.0) * 1000:.2f} ms"
+    )
+    print(
+        f"  Compute Metrics   : jobs_completed={comp.get('compute_jobs_completed', 0)} | "
+        f"total_flops={comp.get('compute_flops_completed', 0.0):.1e} FLOPS"
+    )
 
 
 if __name__ == "__main__":
