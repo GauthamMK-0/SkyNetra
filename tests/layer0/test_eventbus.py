@@ -277,3 +277,11 @@ def test_has_subscribers():
     bus.unsubscribe(SampleEvent, handler)
     assert not bus.has_subscribers()
     assert not bus.has_subscribers(SampleEvent)
+
+    def base_handler(ev: BaseEvent) -> None:
+        pass
+
+    bus.subscribe(BaseEvent, base_handler)
+    assert bus.has_subscribers(BaseEvent)
+    assert bus.has_subscribers(DerivedEvent)
+    assert not bus.has_subscribers(OtherEvent)

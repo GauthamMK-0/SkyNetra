@@ -71,7 +71,12 @@ class EventBus:
         """True if any subscriber is registered (globally or for `event_type`)."""
         if event_type is None:
             return bool(self._subscribers)
-        return bool(self._subscribers.get(event_type))
+        if not self._subscribers:
+            return False
+        cached = self._dispatch_cache.get(event_type)
+        if cached is not None:
+            return bool(cached)
+        return any(klass in self._subscribers for klass in event_type.__mro__)
 
     def publish(self, event: Any) -> None:
         if not self._subscribers:

@@ -604,15 +604,16 @@ class SkyNetraSimulation:
 
         packet.hops = 0
         packet.path_history = [str(current_node_id)]
-        self._publish(
-            context,
-            PacketArrivalEvent(
-                time=env.now,
-                event_type="packet_arrival",
-                packet=packet,
-                node_id=current_node_id,
-            ),
-        )
+        if self._record_events or context.event_bus.has_subscribers(PacketArrivalEvent):
+            self._publish(
+                context,
+                PacketArrivalEvent(
+                    time=env.now,
+                    event_type="packet_arrival",
+                    packet=packet,
+                    node_id=current_node_id,
+                ),
+            )
 
         while env.now < context.sim_duration_s and packet.hops < MAX_FORWARD_HOPS:
             if context.routing_engine is None:
@@ -639,20 +640,28 @@ class SkyNetraSimulation:
                 self._drop(context, packet, current_node_id, "routing_error")
                 return
 
-            self._publish(
-                context,
-                RoutingDecisionEvent(
-                    time=env.now,
-                    event_type="routing_decision",
-                    packet=packet,
-                    node_id=current_node_id,
-                    next_hop=next_hop,
-                    weight_overrides={
+            if self._record_events or context.event_bus.has_subscribers(
+                RoutingDecisionEvent
+            ):
+                overrides = (
+                    {
                         str(link_id): value
                         for link_id, value in context.combined_weight_overrides.items()
-                    },
-                ),
-            )
+                    }
+                    if context.combined_weight_overrides
+                    else {}
+                )
+                self._publish(
+                    context,
+                    RoutingDecisionEvent(
+                        time=env.now,
+                        event_type="routing_decision",
+                        packet=packet,
+                        node_id=current_node_id,
+                        next_hop=next_hop,
+                        weight_overrides=overrides,
+                    ),
+                )
 
             if (
                 next_hop is None
@@ -678,16 +687,19 @@ class SkyNetraSimulation:
                     self._drop(context, packet, current_node_id, "queue_empty")
                     return
 
-            self._publish(
-                context,
-                PacketTransmitEvent(
-                    time=env.now,
-                    event_type="packet_transmit",
-                    packet=packet,
-                    node_id=current_node_id,
-                    to_node=next_hop,
-                ),
-            )
+            if self._record_events or context.event_bus.has_subscribers(
+                PacketTransmitEvent
+            ):
+                self._publish(
+                    context,
+                    PacketTransmitEvent(
+                        time=env.now,
+                        event_type="packet_transmit",
+                        packet=packet,
+                        node_id=current_node_id,
+                        to_node=next_hop,
+                    ),
+                )
 
             link_id = LinkId(f"{current_node_id}->{next_hop}")
             link_resource = context.link_resources.get(link_id)
@@ -722,15 +734,16 @@ class SkyNetraSimulation:
             if next_node is None or not next_node.process_packet(packet):
                 self._drop(context, packet, next_hop, "node_unavailable")
                 return
-            self._publish(
-                context,
-                PacketArrivalEvent(
-                    time=env.now,
-                    event_type="packet_arrival",
-                    packet=packet,
-                    node_id=next_hop,
-                ),
-            )
+            if self._record_events or context.event_bus.has_subscribers(PacketArrivalEvent):
+                self._publish(
+                    context,
+                    PacketArrivalEvent(
+                        time=env.now,
+                        event_type="packet_arrival",
+                        packet=packet,
+                        node_id=next_hop,
+                    ),
+                )
             packet.hops += 1
             packet.path_history.append(str(next_hop))
             current_node_id = next_hop
