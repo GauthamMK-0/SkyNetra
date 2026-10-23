@@ -56,7 +56,8 @@ class TestDopplerModel:
     def test_closing_link_positive_shift(self):
         model = DopplerModel({"enabled": True})
         model.compute_link_physics(NodeId("a"), NodeId("b"), 1000.0, 0.0, 1.0)
-        delta = model.compute_link_physics(NodeId("a"), NodeId("b"), 1010.0, 1.0, 1.0)
+        # Distance decreases -> nodes are approaching -> positive Doppler blue-shift
+        delta = model.compute_link_physics(NodeId("a"), NodeId("b"), 990.0, 1.0, 1.0)
         expected = CARRIER_FREQ_HZ * (10.0 / 1.0) / SPEED_OF_LIGHT_KM_S
         assert delta["doppler_shift_hz"] == pytest.approx(expected)
         assert delta["doppler_shift_hz"] > 0.0
@@ -64,7 +65,10 @@ class TestDopplerModel:
     def test_receding_link_negative_shift(self):
         model = DopplerModel({"enabled": True})
         model.compute_link_physics(NodeId("a"), NodeId("b"), 1000.0, 0.0, 1.0)
-        delta = model.compute_link_physics(NodeId("a"), NodeId("b"), 990.0, 1.0, 1.0)
+        # Distance increases -> nodes are separating -> negative Doppler red-shift
+        delta = model.compute_link_physics(NodeId("a"), NodeId("b"), 1010.0, 1.0, 1.0)
+        expected = -CARRIER_FREQ_HZ * (10.0 / 1.0) / SPEED_OF_LIGHT_KM_S
+        assert delta["doppler_shift_hz"] == pytest.approx(expected)
         assert delta["doppler_shift_hz"] < 0.0
 
     def test_stationary_link_zero_shift(self):
@@ -76,7 +80,7 @@ class TestDopplerModel:
     def test_custom_carrier_freq(self):
         model = DopplerModel({"enabled": True, "carrier_freq_hz": 10e9})
         model.compute_link_physics(NodeId("a"), NodeId("b"), 1000.0, 0.0, 1.0)
-        delta = model.compute_link_physics(NodeId("a"), NodeId("b"), 1010.0, 1.0, 1.0)
+        delta = model.compute_link_physics(NodeId("a"), NodeId("b"), 990.0, 1.0, 1.0)
         expected = 10e9 * 10.0 / SPEED_OF_LIGHT_KM_S
         assert delta["doppler_shift_hz"] == pytest.approx(expected)
 

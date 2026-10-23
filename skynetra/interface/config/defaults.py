@@ -112,6 +112,7 @@ def config_to_simulation_spec(
         isl_capacity_gbps=config.network.isl_capacity_gbps,
         gsl_capacity_gbps=config.network.gsl_capacity_gbps,
         gsl_elevation_min_deg=config.ground_stations.gsl_elevation_min_deg,
+        enforce_isl_los=config.network.enforce_isl_los,
         seed=config.simulation.seed,
         record_events=config.simulation.record_events,
     )

@@ -105,6 +105,7 @@ class SkyNetraSimulation:
         isl_capacity_gbps: float = 100.0
         gsl_capacity_gbps: float = 10.0
         gsl_elevation_min_deg: float = 10.0
+        enforce_isl_los: bool = False
         seed: int = 42
         record_events: bool = True
         max_event_log_size: int | None = None
@@ -123,6 +124,7 @@ class SkyNetraSimulation:
         isl_capacity_gbps: float = 100.0,
         gsl_capacity_gbps: float = 10.0,
         gsl_elevation_min_deg: float = 10.0,
+        enforce_isl_los: bool = False,
         seed: int = 42,
         debug_routing: bool = False,
         record_events: bool = True,
@@ -141,6 +143,7 @@ class SkyNetraSimulation:
         self._isl_capacity_gbps = isl_capacity_gbps
         self._gsl_capacity_gbps = gsl_capacity_gbps
         self._gsl_elevation_min_deg = gsl_elevation_min_deg
+        self._enforce_isl_los = enforce_isl_los
         self._seed = seed
         self._debug_routing = debug_routing
         self._record_events = record_events
@@ -182,6 +185,7 @@ class SkyNetraSimulation:
             isl_capacity_gbps=spec.isl_capacity_gbps,
             gsl_capacity_gbps=spec.gsl_capacity_gbps,
             gsl_elevation_min_deg=spec.gsl_elevation_min_deg,
+            enforce_isl_los=spec.enforce_isl_los,
             seed=spec.seed,
             record_events=spec.record_events,
             max_event_log_size=spec.max_event_log_size,
@@ -202,6 +206,7 @@ class SkyNetraSimulation:
         isl_capacity_gbps: float = 100.0,
         gsl_capacity_gbps: float = 10.0,
         gsl_elevation_min_deg: float = 10.0,
+        enforce_isl_los: bool = False,
         seed: int = 42,
         record_events: bool = True,
         max_event_log_size: int | None = None,
@@ -220,6 +225,7 @@ class SkyNetraSimulation:
             isl_capacity_gbps=isl_capacity_gbps,
             gsl_capacity_gbps=gsl_capacity_gbps,
             gsl_elevation_min_deg=gsl_elevation_min_deg,
+            enforce_isl_los=enforce_isl_los,
             seed=seed,
             record_events=record_events,
             max_event_log_size=max_event_log_size,
@@ -345,14 +351,16 @@ class SkyNetraSimulation:
         if self._cached_isl_links is None:
             self._cached_isl_links = self._isl_links(sat_ids, self._constellation)
 
+        pod_positions = {nid: station_positions[nid] for nid in pod_ids}
         graph = build_topology_graph(
             sat_positions=sat_positions,
             isl_links=self._cached_isl_links,
-            pod_ids=pod_ids,
+            pod_ids=pod_positions,
             ground_stations=gs_positions,
             link_capacity_gbps=self._isl_capacity_gbps,
             gsl_capacity_gbps=self._gsl_capacity_gbps,
             gsl_elevation_min_deg=self._gsl_elevation_min_deg,
+            enforce_isl_los=self._enforce_isl_los,
         )
         self._attach_pod_edges(
             graph,
@@ -475,7 +483,11 @@ class SkyNetraSimulation:
             orchestrator = context.physics_orchestrator
             if orchestrator is None or context.propagator is None or context.constellation is None:
                 continue
-            positions = context.propagator.get_positions(env.now, context.constellation)
+            positions = dict(context.propagator.get_positions(env.now, context.constellation))
+            if self._initial_station_positions is not None:
+                rotation_rad = sidereal_angle_rad(env.now)
+                for nid, pos in self._initial_station_positions.items():
+                    positions[nid] = rotate_vector_z(pos, rotation_rad)
             try:
                 result = orchestrator.run_tick(
                     env.now,

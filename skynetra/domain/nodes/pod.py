@@ -95,14 +95,14 @@ class PodNode(Node):
 
     def record_compute(self, packet: Packet) -> None:
         """Accrue completion metrics for a serviced task: task and FLOPS
-        counters plus an energy estimate based on the currently
-        available compute rate. Service time is a Layer 3 concern.
+        counters plus an energy estimate in Joules based on execution duration
+        and node power draw. Service time is a Layer 3 concern.
         """
         self._metrics_state["compute_tasks"] += 1
         self._metrics_state["compute_flops"] += packet.flops_required
-        self._metrics_state["energy_consumed"] += (
-            packet.flops_required / max(1.0, self.available_compute_flops())
-        )
+        duration_s = packet.flops_required / max(1.0, self.available_compute_flops())
+        power_w = float(self._physics_state.get("power_available_w", 1000.0))
+        self._metrics_state["energy_consumed"] += duration_s * power_w
         self._metrics_state["packets_sent"] += 1
         self._publish("packet_computed", {"packet_id": packet.packet_id})
 

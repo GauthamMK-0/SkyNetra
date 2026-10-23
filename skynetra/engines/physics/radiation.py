@@ -27,7 +27,7 @@ from typing import Any
 from skynetra.domain.nodes.base import Node
 from skynetra.domain.orbit.constellation import ConstellationConfig
 from skynetra.engines.physics.interface import PhysicsModel
-from skynetra.foundation.math_utils import kepler_period_s
+from skynetra.foundation.math_utils import eci_to_ecef_lat_lon_deg, kepler_period_s
 from skynetra.foundation.time_utils import sim_time_to_orbital_phase
 from skynetra.foundation.types import NodeId, Vector3
 
@@ -48,9 +48,11 @@ class RadiationModel(PhysicsModel):
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
-        self._background_dose_rate_rad_s = float(
-            self._config.get("background_dose_rate_rad_s", BACKGROUND_DOSE_RATE_RAD_S)
-        )
+        dose_rate = self._config.get("background_dose_rate_rad_s")
+        if dose_rate is None:
+            dose_rate = self._config.get("dose_rate_rad_s", BACKGROUND_DOSE_RATE_RAD_S)
+        self._background_dose_rate_rad_s = float(dose_rate)
+
         self._saa_boost_factor = float(
             self._config.get("saa_boost_factor", SAA_BOOST_FACTOR)
         )
@@ -76,17 +78,38 @@ class RadiationModel(PhysicsModel):
                 "solar_event_dose_multiplier", SOLAR_EVENT_DOSE_MULTIPLIER
             )
         )
-        self._latchup_threshold_rad = float(
-            self._config.get("latchup_threshold_rad", LATCHUP_THRESHOLD_RAD)
-        )
+        latchup = self._config.get("latchup_threshold_rad")
+        if latchup is None:
+            latchup = self._config.get("latch_up_dose_threshold_rad", LATCHUP_THRESHOLD_RAD)
+        self._latchup_threshold_rad = float(latchup)
         self._ber_scale = float(self._config.get("ber_scale", BER_SCALE))
 
-    def dose_rate_rad_s(self, time_s: float, constellation: ConstellationConfig) -> float:
-        """Total deterministic dose rate at `time_s` (background + boosts)."""
+    def dose_rate_rad_s(
+        self,
+        time_s: float,
+        constellation: ConstellationConfig,
+        sat_position: Vector3 | None = None,
+    ) -> float:
+        """Total deterministic dose rate at `time_s` (background + boosts).
+
+        When `sat_position` is provided, SAA entry is determined by the satellite's
+        sub-satellite geographic latitude/longitude in the ECEF frame.
+        Otherwise falls back to the orbital phase window for tests/non-spatial nodes.
+        """
         rate = self._background_dose_rate_rad_s
-        period_s = kepler_period_s(constellation.altitude_km)
-        phase = sim_time_to_orbital_phase(time_s, period_s)
-        if self._saa_phase_start_f <= phase < self._saa_phase_start_f + self._saa_phase_width_f:
+        in_saa = False
+        if sat_position is not None:
+            lat, lon = eci_to_ecef_lat_lon_deg(sat_position, time_s)
+            # South Atlantic Anomaly bounds: latitude [-45, -10], longitude [-90, 0]
+            if -45.0 <= lat <= -10.0 and -90.0 <= lon <= 0.0:
+                in_saa = True
+        else:
+            period_s = kepler_period_s(constellation.altitude_km)
+            phase = sim_time_to_orbital_phase(time_s, period_s)
+            if self._saa_phase_start_f <= phase < self._saa_phase_start_f + self._saa_phase_width_f:
+                in_saa = True
+
+        if in_saa:
             rate *= self._saa_boost_factor
         event_phase = (
             (time_s + self._solar_event_phase_shift_f * self._solar_event_period_s)
@@ -108,7 +131,7 @@ class RadiationModel(PhysicsModel):
         if not self.enabled:
             return dict(node.physics_state)
         dose = float(node.physics_state["radiation_dose_rad"])
-        dose += self.dose_rate_rad_s(time_s, constellation) * dt_s
+        dose += self.dose_rate_rad_s(time_s, constellation, sat_position) * dt_s
         update: dict[str, Any] = {"radiation_dose_rad": dose}
         if dose >= self._latchup_threshold_rad:
             update["fault_probability"] = 1.0

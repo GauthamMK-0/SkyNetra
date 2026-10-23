@@ -153,3 +153,83 @@ def great_circle_distance(
         * math.sin(dlon / 2) ** 2
     )
     return R * 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+
+
+def has_line_of_sight(
+    pos_a: Vector3, pos_b: Vector3, min_tangent_altitude_km: float = 0.0
+) -> bool:
+    """True if line segment between pos_a and pos_b clears Earth (+ buffer).
+
+    Calculates the point of closest approach to Earth's center on the segment
+    joining pos_a and pos_b. If the minimum distance is below
+    EARTH_RADIUS_KM + min_tangent_altitude_km, the line of sight is obstructed.
+    """
+    ax, ay, az = pos_a
+    bx, by, bz = pos_b
+    dx, dy, dz = bx - ax, by - ay, bz - az
+    d_sq = dx * dx + dy * dy + dz * dz
+    min_radius = EARTH_RADIUS_KM + min_tangent_altitude_km
+    if d_sq <= 1e-12:
+        return math.sqrt(ax * ax + ay * ay + az * az) >= min_radius
+
+    t = -(ax * dx + ay * dy + az * dz) / d_sq
+    if t <= 0.0:
+        closest_sq = ax * ax + ay * ay + az * az
+    elif t >= 1.0:
+        closest_sq = bx * bx + by * by + bz * bz
+    else:
+        cx = ax + t * dx
+        cy = ay + t * dy
+        cz = az + t * dz
+        closest_sq = cx * cx + cy * cy + cz * cz
+
+    return closest_sq >= min_radius * min_radius
+
+
+def is_shadowed_by_earth(
+    sat_pos: Vector3, sun_direction: Vector3 = (1.0, 0.0, 0.0)
+) -> bool:
+    """True if sat_pos is inside Earth's cylindrical shadow relative to the Sun.
+
+    In ECI coordinates:
+      - sat_pos is the satellite vector (km).
+      - sun_direction is the unit vector pointing toward the Sun (default: +X vernal equinox).
+    Shadow condition: projection along sun_direction is negative (anti-solar hemisphere)
+    and perpendicular distance from Sun-Earth line is <= EARTH_RADIUS_KM.
+    """
+    sx, sy, sz = sat_pos
+    ux, uy, uz = sun_direction
+    u_norm = math.sqrt(ux * ux + uy * uy + uz * uz)
+    if u_norm <= 0.0:
+        ux, uy, uz = 1.0, 0.0, 0.0
+    else:
+        ux, uy, uz = ux / u_norm, uy / u_norm, uz / u_norm
+
+    proj = sx * ux + sy * uy + sz * uz
+    if proj >= 0.0:
+        return False
+
+    perp_sq = (sx * sx + sy * sy + sz * sz) - proj * proj
+    return perp_sq <= EARTH_RADIUS_KM * EARTH_RADIUS_KM
+
+
+def eci_to_ecef_lat_lon_deg(pos_eci: Vector3, time_s: float) -> tuple[float, float]:
+    """Geocentric latitude and longitude in degrees from ECI position and sim time."""
+    theta = sidereal_angle_rad(time_s)
+    ecef_pos = rotate_vector_z(pos_eci, -theta)
+    x, y, z = ecef_pos
+    xy_dist = math.sqrt(x * x + y * y)
+    lat_deg = math.degrees(math.atan2(z, xy_dist))
+    lon_deg = math.degrees(math.atan2(y, x))
+    return (lat_deg, lon_deg)
+
+
+STEFAN_BOLTZMANN_CONSTANT = 5.670374419e-8  # W / (m^2 * K^4)
+
+
+def stefan_boltzmann_radiation_w(
+    temperature_k: float, emissivity: float, area_m2: float
+) -> float:
+    """Radiated power in Watts according to the Stefan-Boltzmann law."""
+    return emissivity * STEFAN_BOLTZMANN_CONSTANT * area_m2 * (temperature_k**4)
+

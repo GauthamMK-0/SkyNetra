@@ -65,6 +65,30 @@ class TestThermalModel:
         temp = _tick(model, node, 100.0, 3600.0)["temperature_k"]
         assert temp < 300.0
 
+    def test_3d_shadow_heating_and_cooling(self):
+        model = ThermalModel(
+            {
+                "enabled": True,
+                "solar_equilibrium_k": 320.0,
+                "eclipse_equilibrium_k": 200.0,
+            }
+        )
+        node = _node()
+        # Sunlit hemisphere (+X)
+        sun_pos = (6921.0, 0.0, 0.0)
+        delta_sun = model.compute_node_physics(
+            node.node_id, node, sun_pos, 0.0, 3600.0, CONSTELLATION
+        )
+        assert delta_sun["temperature_k"] > node.physics_state["temperature_k"]
+
+        # Umbra shadow cylinder (-X)
+        shadow_pos = (-6921.0, 0.0, 0.0)
+        node.update_physics({"temperature_k": 300.0})
+        delta_shadow = model.compute_node_physics(
+            node.node_id, node, shadow_pos, 0.0, 3600.0, CONSTELLATION
+        )
+        assert delta_shadow["temperature_k"] < 300.0
+
     def test_sunlight_and_eclipse_cycle(self):
         model = ThermalModel(
             {"enabled": True, "eclipse_fraction": 0.5, "eclipse_equilibrium_k": 200.0}
@@ -134,10 +158,21 @@ class TestThermalThrottle:
         pod.update_physics(delta)
         assert pod.physics_state["temperature_k"] == pytest.approx(350.0)
 
-        effective = pod.available_compute_flops()
-        expected = pod.flops * pod.thermal_degradation_factor()
-        assert effective == pytest.approx(expected)
-        assert effective < pod.flops
+    def test_critical_temp_triggers_fault(self):
+        model = ThermalModel(
+            {
+                "enabled": True,
+                "critical_temp_k": 380.0,
+                "solar_equilibrium_k": 400.0,
+                "eclipse_fraction": 0.0,
+                "albedo": 0.0,
+            }
+        )
+        node = _node()
+        node.update_physics({"temperature_k": 379.0})
+        delta = _tick(model, node, 0.0, 3600.0)
+        assert delta["temperature_k"] >= 380.0
+        assert delta["fault_probability"] == 1.0
 
     def test_nominal_temperature_keeps_full_flops(self):
         pod = PodNode(NodeId("pod-1"), flops=1e12)

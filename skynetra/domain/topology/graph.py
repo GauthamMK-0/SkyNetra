@@ -39,6 +39,7 @@ import networkx as nx
 from skynetra.domain.topology.isl import (
     compute_gsl_elevation_deg,
     compute_isl_link_quality,
+    has_line_of_sight,
 )
 from skynetra.foundation.types import LinkId, NodeId, Vector3
 
@@ -75,12 +76,13 @@ def _add_node(graph: nx.DiGraph, nid: NodeId, position: Vector3, node_type: str)
 def build_topology_graph(
     sat_positions: dict[NodeId, Vector3],
     isl_links: list[tuple[NodeId, NodeId]],
-    pod_ids: list[NodeId],
+    pod_ids: list[NodeId] | dict[NodeId, Vector3],
     ground_stations: dict[NodeId, Vector3],
     link_capacity_gbps: float = DEFAULT_CAPACITY_GBPS,
     gsl_capacity_gbps: float = DEFAULT_GSL_CAPACITY_GBPS,
     gsl_elevation_min_deg: float = DEFAULT_GSL_ELEVATION_MIN_DEG,
     link_quality_overrides: dict[LinkId, dict[str, Any]] | None = None,
+    enforce_isl_los: bool = False,
 ) -> nx.DiGraph:
     """Build the directed network graph from constellation topology inputs.
 
@@ -98,6 +100,8 @@ def build_topology_graph(
         link_quality_overrides: Optional per-`LinkId` attribute dicts
             computed by Layer 2 physics engines; merged over the default
             edge schema for the matching directed edge only.
+        enforce_isl_los: When True, prunes ISLs whose line of sight is obstructed
+            by Earth (occultation). Defaults to False for test fixture backwards compatibility.
 
     Returns:
         A `networkx.DiGraph` carrying the Layer 1 edge/node schema.
@@ -107,14 +111,22 @@ def build_topology_graph(
     for sat_id, pos in sat_positions.items():
         _add_node(graph, sat_id, pos, "sat")
 
-    for pod_id in pod_ids:
-        _add_node(graph, pod_id, (0.0, 0.0, 0.0), "pod")
+    if isinstance(pod_ids, dict):
+        for pod_id, pos in pod_ids.items():
+            _add_node(graph, pod_id, pos, "pod")
+    else:
+        for pod_id in pod_ids:
+            _add_node(graph, pod_id, (0.0, 0.0, 0.0), "pod")
 
     for gs_id, pos in ground_stations.items():
         _add_node(graph, gs_id, pos, "ground")
 
     for sat_a, sat_b in isl_links:
         if sat_a not in sat_positions or sat_b not in sat_positions:
+            continue
+        if enforce_isl_los and not has_line_of_sight(
+            sat_positions[sat_a], sat_positions[sat_b]
+        ):
             continue
         graph.add_edge(
             sat_a,

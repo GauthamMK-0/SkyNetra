@@ -81,8 +81,8 @@ class DopplerModel(PhysicsModel):
         if prev is None:
             shift = 0.0
         else:
-            radial_velocity_kms = (distance_km - prev) / max(dt_s, 1e-9)
-            shift = self.doppler_shift_hz(radial_velocity_kms)
+            closing_velocity_kms = (prev - distance_km) / max(dt_s, 1e-9)
+            shift = self.doppler_shift_hz(closing_velocity_kms)
         self._last_shift_hz[link] = shift
         return {"doppler_shift_hz": shift}
 

@@ -192,6 +192,8 @@ class TestPodNode:
         pod.record_compute(packet)
         assert pod.metrics_state["compute_tasks"] == 1
         assert pod.metrics_state["compute_flops"] == 2e9
+        # 2e9 FLOPs / 1e12 FLOPS = 0.002s; 0.002s * 1000W = 2.0 Joules
+        assert pod.metrics_state["energy_consumed"] == pytest.approx(2.0)
         assert pod.metrics_state["energy_consumed"] > 0.0
 
     def test_take_next_task_empty_queue(self):

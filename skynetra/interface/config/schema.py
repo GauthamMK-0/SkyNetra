@@ -43,6 +43,7 @@ class GroundStationConfig(BaseModel):
 class NetworkConfig(BaseModel):
     isl_capacity_gbps: float = 100.0
     gsl_capacity_gbps: float = 10.0
+    enforce_isl_los: bool = False
 
 
 class RoutingConfig(BaseModel):

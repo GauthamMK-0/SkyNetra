@@ -73,7 +73,7 @@ class TestPowerModel:
         node = _node()
         delta = _tick(model, node, 0.0, 1.0)
         assert delta["battery_charge_wh"] == pytest.approx(
-            SOLAR_FLUX_W_M2 * 10.0 * 0.3 * 1.0 * 0.9
+            (SOLAR_FLUX_W_M2 * 10.0 * 0.3 * 1.0 * 0.9) / 3600.0
         )
 
     def test_battery_capped_at_capacity(self):
@@ -82,7 +82,7 @@ class TestPowerModel:
                 "enabled": True,
                 "eclipse_fraction": 0.0,
                 "battery_capacity_wh": 1000.0,
-                "battery_charge_wh": 900.0,
+                "battery_charge_wh": 999.9,
             }
         )
         node = _node()
@@ -102,7 +102,9 @@ class TestPowerModel:
         node = _node()
         delta = _tick(model, node, 100.0, 1.0)
         assert delta["power_available_w"] == pytest.approx(100.0)
-        assert delta["battery_charge_wh"] == pytest.approx(500.0 - 100.0 / 0.9)
+        assert delta["battery_charge_wh"] == pytest.approx(
+            500.0 - (100.0 * 1.0) / (0.9 * 3600.0)
+        )
 
     def test_eclipse_no_generation(self):
         model = PowerModel(
@@ -134,6 +136,39 @@ class TestPowerModel:
         charge_a = _tick(model, node_a, 0.0, 1.0)["battery_charge_wh"]
         charge_b = _tick(model, node_b, 0.0, 1.0)["battery_charge_wh"]
         assert charge_a == charge_b
+
+    def test_3d_shadow_power_generation(self):
+        model = PowerModel(
+            {
+                "enabled": True,
+                "solar_panel_area_m2": 10.0,
+                "solar_efficiency": 0.3,
+                "battery_capacity_wh": 1000.0,
+                "battery_charge_wh": 500.0,
+            }
+        )
+        node = _node()
+        # Sunlit hemisphere (+X)
+        delta_sun = model.compute_node_physics(
+            node.node_id, node, (6921.0, 0.0, 0.0), 0.0, 1.0, CONSTELLATION
+        )
+        assert delta_sun["power_available_w"] == pytest.approx(
+            SOLAR_FLUX_W_M2 * 10.0 * 0.3
+        )
+        assert delta_sun["battery_charge_wh"] > 500.0
+
+        # Shadow umbra (-X)
+        delta_shadow = model.compute_node_physics(
+            node.node_id, node, (-6921.0, 0.0, 0.0), 0.0, 1.0, CONSTELLATION
+        )
+        assert delta_shadow["power_available_w"] == pytest.approx(100.0)
+        assert delta_shadow["battery_charge_wh"] < delta_sun["battery_charge_wh"]
+
+    def test_direct_solar_panel_wattage_config(self):
+        model = PowerModel({"enabled": True, "solar_panel_w": 3000.0, "eclipse_fraction": 0.0})
+        node = _node()
+        delta = _tick(model, node, 0.0, 1.0)
+        assert delta["power_available_w"] == pytest.approx(3000.0)
 
     def test_get_summary(self):
         summary = PowerModel({"enabled": True}).get_summary()

@@ -25,7 +25,7 @@ from typing import Any
 from skynetra.domain.nodes.base import Node
 from skynetra.domain.orbit.constellation import ConstellationConfig
 from skynetra.engines.physics.interface import PhysicsModel
-from skynetra.foundation.math_utils import kepler_period_s
+from skynetra.foundation.math_utils import is_shadowed_by_earth, kepler_period_s
 from skynetra.foundation.time_utils import is_in_eclipse
 from skynetra.foundation.types import NodeId, Vector3
 
@@ -54,6 +54,9 @@ class ThermalModel(PhysicsModel):
         self._eclipse_fraction = float(
             self._config.get("eclipse_fraction", ECLIPSE_FRACTION)
         )
+        self._critical_temp_k = self._config.get("critical_temp_k")
+        if self._critical_temp_k is not None:
+            self._critical_temp_k = float(self._critical_temp_k)
 
     def compute_node_physics(
         self,
@@ -67,16 +70,31 @@ class ThermalModel(PhysicsModel):
         if not self.enabled:
             return dict(node.physics_state)
         current = float(node.physics_state["temperature_k"])
-        period_s = kepler_period_s(constellation.altitude_km)
-        in_eclipse = is_in_eclipse(time_s, period_s, self._eclipse_fraction)
+        if self._eclipse_fraction <= 0.0:
+            in_eclipse = False
+        elif self._eclipse_fraction >= 1.0:
+            in_eclipse = True
+        elif sat_position is not None:
+            in_eclipse = is_shadowed_by_earth(sat_position)
+        else:
+            period_s = kepler_period_s(constellation.altitude_km)
+            in_eclipse = is_in_eclipse(time_s, period_s, self._eclipse_fraction)
+
         if in_eclipse:
             target = self._eclipse_equilibrium_k
             rate = self._emissivity
         else:
             target = self._solar_equilibrium_k
             rate = 1.0 - self._albedo
+        # First-order linearized Taylor approximation of Stefan-Boltzmann radiative transfer:
+        # dT/dt = (T_target - T) / tau * rate,
+        # where tau = (m * c_p) / (4 * eps * sigma * A * T_target^3)
         delta = (target - current) * (dt_s / self._time_constant_s) * rate
-        return {"temperature_k": current + delta}
+        new_temp = current + delta
+        update: dict[str, Any] = {"temperature_k": new_temp}
+        if self._critical_temp_k is not None and new_temp >= self._critical_temp_k:
+            update["fault_probability"] = 1.0
+        return update
 
     def compute_link_physics(
         self,

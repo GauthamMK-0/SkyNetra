@@ -9,9 +9,12 @@ from skynetra.foundation.math_utils import (
     EARTH_SIDEREAL_RATE_RAD_S,
     cartesian_to_spherical,
     circular_velocity_kms,
+    eci_to_ecef_lat_lon_deg,
     free_space_path_loss_db,
     great_circle_distance,
     great_circle_distance_km,
+    has_line_of_sight,
+    is_shadowed_by_earth,
     kepler_eccentric_anomaly,
     kepler_period_s,
     orbital_elements_to_eci,
@@ -21,6 +24,7 @@ from skynetra.foundation.math_utils import (
     rotation_matrix_z,
     sidereal_angle_rad,
     spherical_to_cartesian,
+    stefan_boltzmann_radiation_w,
 )
 
 
@@ -241,3 +245,59 @@ class TestEarthRotation:
         assert sidereal_angle_rad(3600.0) == pytest.approx(
             math.radians(15.041), rel=1e-3
         )
+
+
+class TestLineOfSight:
+    def test_clear_overhead_path(self):
+        sat_a = (6921.0, 0.0, 0.0)
+        sat_b = (6921.0, 500.0, 0.0)
+        assert has_line_of_sight(sat_a, sat_b) is True
+
+    def test_obstructed_through_earth_center(self):
+        sat_a = (6921.0, 0.0, 0.0)
+        sat_b = (-6921.0, 0.0, 0.0)
+        assert has_line_of_sight(sat_a, sat_b) is False
+
+    def test_grazing_with_atmospheric_buffer(self):
+        # Two satellites separated such that tangent distance is ~6400 km
+        # clears Earth radius (6371 km) but blocked by 80 km atmosphere (6451 km)
+        angle = math.acos(6400.0 / 6921.0)
+        sat_a = (6921.0 * math.cos(angle), 6921.0 * math.sin(angle), 0.0)
+        sat_b = (6921.0 * math.cos(-angle), 6921.0 * math.sin(-angle), 0.0)
+        assert has_line_of_sight(sat_a, sat_b, min_tangent_altitude_km=0.0) is True
+        assert has_line_of_sight(sat_a, sat_b, min_tangent_altitude_km=80.0) is False
+
+
+class TestEarthShadow:
+    def test_sunlit_hemisphere(self):
+        sat = (6921.0, 0.0, 0.0)  # +X points toward Sun
+        assert is_shadowed_by_earth(sat, sun_direction=(1.0, 0.0, 0.0)) is False
+
+    def test_in_umbra_cylinder(self):
+        sat = (-6921.0, 0.0, 0.0)  # -X directly behind Earth
+        assert is_shadowed_by_earth(sat, sun_direction=(1.0, 0.0, 0.0)) is True
+
+    def test_outside_shadow_cylinder_in_anti_solar_hemisphere(self):
+        sat = (-6921.0, 7000.0, 0.0)  # -X but Y > Earth radius
+        assert is_shadowed_by_earth(sat, sun_direction=(1.0, 0.0, 0.0)) is False
+
+
+class TestEciToEcefLatLon:
+    def test_equator_prime_meridian_t0(self):
+        lat, lon = eci_to_ecef_lat_lon_deg((6371.0, 0.0, 0.0), 0.0)
+        assert lat == pytest.approx(0.0)
+        assert lon == pytest.approx(0.0)
+
+    def test_north_pole(self):
+        lat, lon = eci_to_ecef_lat_lon_deg((0.0, 0.0, 6371.0), 1000.0)
+        assert lat == pytest.approx(90.0)
+
+
+class TestStefanBoltzmann:
+    def test_zero_emissivity_zero_power(self):
+        assert stefan_boltzmann_radiation_w(300.0, 0.0, 1.0) == 0.0
+
+    def test_known_radiation_value(self):
+        # 1 m^2 blackbody at 300 K: sigma * 300^4 = 5.670374e-8 * 8.1e9 = 459.3 W
+        power = stefan_boltzmann_radiation_w(300.0, 1.0, 1.0)
+        assert power == pytest.approx(459.3, abs=0.5)

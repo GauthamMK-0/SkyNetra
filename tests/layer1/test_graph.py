@@ -70,6 +70,30 @@ class TestGraphStructure:
         assert not graph.has_edge(NodeId("sat-low"), NodeId("gs-1"))
         assert not graph.has_edge(NodeId("gs-1"), NodeId("sat-low"))
 
+    def test_isl_los_filtering(self):
+        sat_positions = {
+            NodeId("sat-a"): (6921.0, 0.0, 0.0),
+            NodeId("sat-b"): (-6921.0, 0.0, 0.0),
+        }
+        isl_links = [(NodeId("sat-a"), NodeId("sat-b"))]
+        g_no_filter = build_topology_graph(
+            sat_positions=sat_positions,
+            isl_links=isl_links,
+            pod_ids=[],
+            ground_stations={},
+            enforce_isl_los=False,
+        )
+        assert g_no_filter.has_edge(NodeId("sat-a"), NodeId("sat-b"))
+
+        g_filtered = build_topology_graph(
+            sat_positions=sat_positions,
+            isl_links=isl_links,
+            pod_ids=[],
+            ground_stations={},
+            enforce_isl_los=True,
+        )
+        assert not g_filtered.has_edge(NodeId("sat-a"), NodeId("sat-b"))
+
 
 class TestNodeSchema:
     def test_node_schema_defaults(self):

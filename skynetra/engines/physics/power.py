@@ -21,7 +21,7 @@ from typing import Any
 from skynetra.domain.nodes.base import Node
 from skynetra.domain.orbit.constellation import ConstellationConfig
 from skynetra.engines.physics.interface import PhysicsModel
-from skynetra.foundation.math_utils import kepler_period_s
+from skynetra.foundation.math_utils import is_shadowed_by_earth, kepler_period_s
 from skynetra.foundation.time_utils import is_in_eclipse
 from skynetra.foundation.types import NodeId, Vector3
 
@@ -68,6 +68,8 @@ class PowerModel(PhysicsModel):
         self._initial_charge_wh = float(
             self._config.get("battery_charge_wh", BATTERY_CHARGE_WH)
         )
+        raw_solar_w = self._config.get("solar_panel_w")
+        self._solar_panel_w: float | None = float(raw_solar_w) if raw_solar_w is not None else None
         self._battery_charge_wh: dict[NodeId, float] = {}
 
     def _charge_for(self, node_id: NodeId) -> float:
@@ -78,6 +80,8 @@ class PowerModel(PhysicsModel):
     def generated_power_w(self, in_eclipse: bool) -> float:
         if in_eclipse:
             return 0.0
+        if self._solar_panel_w is not None:
+            return float(self._solar_panel_w)
         return self._solar_flux_w_m2 * self._solar_panel_area_m2 * self._solar_efficiency
 
     def compute_node_physics(
@@ -91,19 +95,27 @@ class PowerModel(PhysicsModel):
     ) -> dict[str, Any]:
         if not self.enabled:
             return dict(node.physics_state)
-        period_s = kepler_period_s(constellation.altitude_km)
-        in_eclipse = is_in_eclipse(time_s, period_s, self._eclipse_fraction)
+        if self._eclipse_fraction <= 0.0:
+            in_eclipse = False
+        elif self._eclipse_fraction >= 1.0:
+            in_eclipse = True
+        elif sat_position is not None:
+            in_eclipse = is_shadowed_by_earth(sat_position)
+        else:
+            period_s = kepler_period_s(constellation.altitude_km)
+            in_eclipse = is_in_eclipse(time_s, period_s, self._eclipse_fraction)
+
         charge = self._charge_for(node_id)
         if in_eclipse:
-            max_draw = charge / max(dt_s, 1e-9)
+            max_draw = (charge * 3600.0) / max(dt_s, 1e-9)
             draw = min(self._discharge_power_w, max_draw)
-            charge = max(0.0, charge - draw * dt_s / self._discharge_efficiency)
+            charge = max(0.0, charge - (draw * dt_s) / (self._discharge_efficiency * 3600.0))
             power_available = draw
         else:
             generated = self.generated_power_w(in_eclipse=False)
             charge = min(
                 self._battery_capacity_wh,
-                charge + generated * dt_s * self._charge_efficiency,
+                charge + (generated * dt_s * self._charge_efficiency) / 3600.0,
             )
             power_available = generated
         self._battery_charge_wh[node_id] = charge
