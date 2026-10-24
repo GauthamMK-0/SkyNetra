@@ -16,13 +16,19 @@ from __future__ import annotations
 from typing import Any
 
 from skynetra.engines.routing.backpressure import BackPressureRouter
+from skynetra.engines.routing.geographic import GeographicGreedyRouter
 from skynetra.engines.routing.interface import RoutingEngine
+from skynetra.engines.routing.physics_compute_synergy import PhysicsComputeSynergyRouter
 from skynetra.engines.routing.shortest_path import ShortestPathRouter
+from skynetra.engines.routing.thermal_energy import ThermalEnergyAwareRouter
 from skynetra.foundation.errors import RoutingError
 
 STRATEGIES: dict[str, type[RoutingEngine]] = {
     "shortest_path": ShortestPathRouter,
     "backpressure": BackPressureRouter,
+    "geographic_greedy": GeographicGreedyRouter,
+    "thermal_energy_aware": ThermalEnergyAwareRouter,
+    "physics_compute_synergy": PhysicsComputeSynergyRouter,
 }
 
 

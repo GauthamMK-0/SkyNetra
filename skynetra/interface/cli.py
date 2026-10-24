@@ -91,7 +91,16 @@ def main() -> None:
 @click.option(
     "--routing",
     "-r",
-    type=click.Choice(["shortest_path", "backpressure"], case_sensitive=False),
+    type=click.Choice(
+        [
+            "shortest_path",
+            "backpressure",
+            "geographic_greedy",
+            "thermal_energy_aware",
+            "physics_compute_synergy",
+        ],
+        case_sensitive=False,
+    ),
     default=None,
     help="Routing strategy override",
 )
@@ -204,20 +213,34 @@ def list_strategies() -> None:
 @click.option("--config", "-c", default=None, help="Path to config YAML/JSON")
 @click.option("--output", "-o", default="results/compare/", help="Output directory")
 def compare(config: Optional[str], output: str) -> None:
-    """Run SP vs BP head-to-head and print comparison"""
+    """Run all 5 routing strategies head-to-head and print comparison"""
     cfg = _load_base_config(config, False)
     out_dir = Path(output)
     out_dir.mkdir(parents=True, exist_ok=True)
+    all_strategies = (
+        "shortest_path",
+        "backpressure",
+        "geographic_greedy",
+        "thermal_energy_aware",
+        "physics_compute_synergy",
+    )
     results: dict[str, Any] = {}
-    for strategy in ("shortest_path", "backpressure"):
-        cfg.routing.strategy = strategy
+    for strategy in all_strategies:
+        cfg.routing.strategy = strategy  # type: ignore[assignment]
         spec = config_to_simulation_spec(cfg)
         results[strategy] = OrbitDCSimulation.from_spec(spec).run()
         _write_results(results[strategy], out_dir, f"compare_{strategy}.json")
 
-    sp_net = results["shortest_path"].engine_metrics.get("network_metrics", {})
-    bp_net = results["backpressure"].engine_metrics.get("network_metrics", {})
-    click.echo(f"{'metric':<24} {'shortest_path':>14} {'backpressure':>14}")
+    header = f"{'metric':<22}" + "".join(f"{s:>24}" for s in all_strategies)
+    click.echo(header)
     for key in SUMMARY_KEYS:
-        click.echo(f"{key:<24} {sp_net.get(key, 0):>14} {bp_net.get(key, 0):>14}")
+        row = f"{key:<22}"
+        for strategy in all_strategies:
+            net_m = results[strategy].engine_metrics.get("network_metrics", {})
+            val = net_m.get(key, 0)
+            if isinstance(val, float):
+                row += f"{val:>24.4f}"
+            else:
+                row += f"{val:>24}"
+        click.echo(row)
     click.echo(f"Comparison written to {out_dir}")

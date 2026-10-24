@@ -47,7 +47,13 @@ class NetworkConfig(BaseModel):
 
 
 class RoutingConfig(BaseModel):
-    strategy: Literal["shortest_path", "backpressure"] = "shortest_path"
+    strategy: Literal[
+        "shortest_path",
+        "backpressure",
+        "geographic_greedy",
+        "thermal_energy_aware",
+        "physics_compute_synergy",
+    ] = "shortest_path"
     config: dict[str, Any] = {}
 
 

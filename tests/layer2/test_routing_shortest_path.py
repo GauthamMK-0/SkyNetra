@@ -240,7 +240,13 @@ class TestRoutingRegistry:
         assert "'backpressure'" in message
 
     def test_static_strategy_set(self):
-        assert set(STRATEGIES.keys()) == {"shortest_path", "backpressure"}
+        assert set(STRATEGIES.keys()) == {
+            "shortest_path",
+            "backpressure",
+            "geographic_greedy",
+            "thermal_energy_aware",
+            "physics_compute_synergy",
+        }
 
 
 def _pod_transit_graph() -> nx.DiGraph:
