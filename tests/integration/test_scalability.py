@@ -62,8 +62,13 @@ def test_6x10_backpressure_hot_path_speed_guard() -> None:
     coverage tracing (sys.gettrace()), a higher budget accounts for
     line-tracing and noisy-neighbor VM overhead.
     """
-    is_traced = sys.gettrace() is not None or "CI" in os.environ
-    budget = 20.0 if is_traced else 12.0
+    is_traced = (
+        sys.gettrace() is not None
+        or "CI" in os.environ
+        or "coverage" in sys.modules
+        or "pytest_cov" in sys.modules
+    )
+    budget = 35.0 if is_traced else 12.0
     started = time.perf_counter()
     _run_bounded("backpressure")
     elapsed = time.perf_counter() - started

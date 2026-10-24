@@ -5,7 +5,6 @@ Tests for PhysicsComputeSynergyRouter (PCSR - Custom Proposed Strategy).
 from __future__ import annotations
 
 import networkx as nx
-import pytest
 
 from skynetra.domain.nodes.pod import PodNode
 from skynetra.domain.nodes.relay import RelayNode
@@ -41,10 +40,22 @@ def _build_synergy_graph() -> tuple[nx.DiGraph, dict[NodeId, RelayNode | PodNode
     for nid, node in registry.items():
         g.add_node(nid, node_type=node.node_type)
 
-    g.add_edge(NodeId("src"), NodeId("sat_p0_s1"), propagation_delay_ms=2.0, capacity=100.0, link_type="isl")
-    g.add_edge(NodeId("sat_p0_s1"), NodeId("pod_1"), propagation_delay_ms=2.0, capacity=10.0, link_type="pod")
-    g.add_edge(NodeId("src"), NodeId("sat_p0_s2"), propagation_delay_ms=2.5, capacity=100.0, link_type="isl")
-    g.add_edge(NodeId("sat_p0_s2"), NodeId("pod_2"), propagation_delay_ms=2.5, capacity=10.0, link_type="pod")
+    g.add_edge(
+        NodeId("src"), NodeId("sat_p0_s1"),
+        propagation_delay_ms=2.0, capacity=100.0, link_type="isl",
+    )
+    g.add_edge(
+        NodeId("sat_p0_s1"), NodeId("pod_1"),
+        propagation_delay_ms=2.0, capacity=10.0, link_type="pod",
+    )
+    g.add_edge(
+        NodeId("src"), NodeId("sat_p0_s2"),
+        propagation_delay_ms=2.5, capacity=100.0, link_type="isl",
+    )
+    g.add_edge(
+        NodeId("sat_p0_s2"), NodeId("pod_2"),
+        propagation_delay_ms=2.5, capacity=10.0, link_type="pod",
+    )
 
     return g, registry
 
@@ -93,7 +104,7 @@ class TestPhysicsComputeSynergyRouter:
         # Degrade pod_1 by heating it to 370 K (severe thermal throttling of FLOPS)
         pod1 = reg[NodeId("pod_1")]
         pod1.update_physics({"temperature_k": 370.0})
-        
+
         # Route packet destined for pod_1 vs pod_2
         router = PhysicsComputeSynergyRouter({"w_compute": 50.0})
         pkt = _make_packet("src", "pod_1")

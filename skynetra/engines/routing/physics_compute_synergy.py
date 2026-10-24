@@ -21,7 +21,6 @@ May import from: itself, engines, domain, foundation.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 import networkx as nx
@@ -35,7 +34,7 @@ from skynetra.foundation.types import LinkId, NodeId
 
 class PhysicsComputeSynergyRouter(RoutingEngine):
     """SkyNetra Physics-Compute Synergy Router (PCSR).
-    
+
     Proactive joint optimization across space environment, orbital dynamics,
     network queue contention, and on-orbit accelerator capacity.
     """
@@ -48,7 +47,7 @@ class PhysicsComputeSynergyRouter(RoutingEngine):
         self._w_compute = float(self._config.get("w_compute", 35.0))
         self._w_radiation = float(self._config.get("w_radiation", 15.0))
         self._w_intra_plane_bias = float(self._config.get("w_intra_plane_bias", 0.5))
-        
+
         self._temp_nominal_k = float(self._config.get("temp_nominal_k", 300.0))
         self._temp_critical_k = float(self._config.get("temp_critical_k", 380.0))
         self._ref_radiation_rad = float(self._config.get("ref_radiation_rad", 1000.0))
@@ -83,7 +82,6 @@ class PhysicsComputeSynergyRouter(RoutingEngine):
             if weight_overrides:
                 prop_delay_ms += float(weight_overrides.get(LinkId(f"{u}->{v}"), 0.0))
 
-            capacity_gbps = max(0.1, float(attrs.get("capacity", 10.0)))
             cost = self._w_delay * prop_delay_ms
 
             # Intra-plane link preference (stability across orbit plane)

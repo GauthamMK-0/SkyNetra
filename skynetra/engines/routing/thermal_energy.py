@@ -12,7 +12,6 @@ May import from: itself, engines, domain, foundation.
 
 from __future__ import annotations
 
-import math
 from typing import Any
 
 import networkx as nx
@@ -25,7 +24,7 @@ from skynetra.foundation.types import LinkId, NodeId
 
 class ThermalEnergyAwareRouter(RoutingEngine):
     """Thermal and Energy-Harvesting Aware Router (TEHR).
-    
+
     Dynamically routes around satellites approaching thermal throttling
     thresholds or experiencing battery depletion during eclipses.
     """

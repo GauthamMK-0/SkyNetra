@@ -5,7 +5,6 @@ Tests for ThermalEnergyAwareRouter (TEHR).
 from __future__ import annotations
 
 import networkx as nx
-import pytest
 
 from skynetra.domain.nodes.relay import RelayNode
 from skynetra.domain.packets.packet import Packet

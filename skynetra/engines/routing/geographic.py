@@ -21,12 +21,12 @@ import networkx as nx
 from skynetra.domain.nodes.base import Node
 from skynetra.domain.packets.packet import Packet
 from skynetra.engines.routing.interface import RoutingEngine
-from skynetra.foundation.types import LinkId, NodeId, Vector3
+from skynetra.foundation.types import LinkId, NodeId
 
 
 class GeographicGreedyRouter(RoutingEngine):
     """Geographic Greedy Router for satellite constellations (GPSR-Space).
-    
+
     Greedily advances packets toward the 3D ECI destination coordinates.
     Stateless and localized: requires no global routing table exchange.
     """
